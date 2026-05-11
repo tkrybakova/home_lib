@@ -1,0 +1,37 @@
+{
+  "name": "Домашняя библиотека",
+  "short_name": "Библиотека",
+  "description": "Локальный каталог домашних книг со шкафами, полками и сканированием ISBN.",
+  "lang": "ru",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f8f4ec",
+  "theme_color": "#6e4219",
+  "categories": [
+    "books",
+    "productivity",
+    "utilities"
+  ],
+  "icons": [
+    {
+      "src": "/src/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/src/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/src/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
