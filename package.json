@@ -1,0 +1,11 @@
+{
+  "name": "home-lib",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "python3 -m http.server 5173",
+    "build": "node --check src/main.js && node --check sw.js && python3 -m json.tool manifest.webmanifest >/dev/null",
+    "preview": "python3 -m http.server 4173"
+  }
+}
