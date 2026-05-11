@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Домашняя библиотека">
+  <rect width="512" height="512" rx="112" fill="#6e4219"/>
+  <rect x="112" y="112" width="72" height="288" rx="20" fill="#fff8ed"/>
+  <rect x="208" y="96" width="72" height="304" rx="20" fill="#f1d3a7"/>
+  <rect x="304" y="132" width="72" height="268" rx="20" fill="#fff8ed"/>
+  <path d="M128 180h40M224 164h40M320 208h40M128 336h40M224 336h40M320 336h40" stroke="#6e4219" stroke-width="18" stroke-linecap="round"/>
+</svg>
