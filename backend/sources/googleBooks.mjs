@@ -7,7 +7,9 @@ const BASE_URL = 'https://www.googleapis.com/books/v1/volumes';
 export async function fetchGoogleBookByIsbn(isbn, options = {}) {
   const normalizedIsbn = normalizeIsbn(isbn);
   if (!normalizedIsbn) return [];
-  return fetchGoogleBooks(`isbn:${normalizedIsbn}`, { ...options, isbnHint: normalizedIsbn });
+  const byIsbn = await fetchGoogleBooks(`isbn:${normalizedIsbn}`, { ...options, isbnHint: normalizedIsbn });
+  if (byIsbn.length) return byIsbn;
+  return fetchGoogleBooks(normalizedIsbn, { ...options, isbnHint: normalizedIsbn });
 }
 
 export async function searchGoogleBooks(query, options = {}) {
