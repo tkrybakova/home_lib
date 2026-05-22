@@ -78,3 +78,10 @@ label { display: grid; gap: 6px; color: #5c4a38; font-weight: 800; }
   .button,.ghost,input,select,textarea,.add-shelf { min-height: 44px; }
   .library-pill > button,.card-select { min-height: 56px; }
 }
+
+.isbn-lookup-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+.lookup-status { color: #746554; font-weight: 700; }
+.lookup-status[data-type="success"] { color: #2f7a3e; }
+.lookup-status[data-type="error"] { color: #b93d2d; }
+.lookup-status[data-type="loading"] { color: #8a5b22; }
+@media (max-width: 620px) { .isbn-lookup-row { grid-template-columns: 1fr; } }

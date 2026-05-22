@@ -109,6 +109,117 @@ function normalizeIsbnBarcode(rawValue = '') {
   return digits.length >= 8 ? digits : '';
 }
 
+function parsePublishedYear(value = '') {
+  return String(value).match(/\b(1[5-9]\d{2}|20\d{2})\b/)?.[0] || '';
+}
+
+function setLookupStatus(message, type = 'info') {
+  const status = app.querySelector('[data-lookup-status]');
+  if (!status) return;
+  status.textContent = message;
+  status.dataset.type = type;
+}
+
+function setFormField(form, name, value, replace = false) {
+  const field = form.elements[name];
+  if (!field || value === undefined || value === null || value === '') return;
+  if (replace || !String(field.value || '').trim()) {
+    field.value = Array.isArray(value) ? value.join(', ') : value;
+  }
+}
+
+function fillBookFormFromLookup(form, metadata) {
+  setFormField(form, 'title', metadata.title);
+  setFormField(form, 'authors', metadata.authors);
+  setFormField(form, 'publisher', metadata.publisher);
+  setFormField(form, 'publishedYear', metadata.publishedYear);
+  setFormField(form, 'coverUrl', metadata.coverUrl);
+  setFormField(form, 'description', metadata.description);
+  setFormField(form, 'tags', metadata.tags);
+}
+
+async function lookupBookByIsbn(isbn) {
+  const normalizedIsbn = normalizeIsbnBarcode(isbn);
+  if (!normalizedIsbn) throw new Error('Введите корректный ISBN или EAN-13.');
+
+  const errors = [];
+  for (const lookup of [lookupGoogleBookByIsbn, lookupOpenLibraryBookByIsbn]) {
+    try {
+      const metadata = await lookup(normalizedIsbn);
+      if (metadata?.title) return metadata;
+    } catch (error) {
+      errors.push(error.message);
+    }
+  }
+
+  throw new Error(errors.at(-1) || 'Книга с таким ISBN не найдена в Google Books и Open Library.');
+}
+
+async function lookupGoogleBookByIsbn(normalizedIsbn) {
+  const response = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${encodeURIComponent(normalizedIsbn)}`, {
+    headers: { Accept: 'application/json' },
+  });
+
+  if (!response.ok) throw new Error('Google Books временно недоступен.');
+
+  const data = await response.json();
+  const volume = data.items?.[0]?.volumeInfo;
+  if (!volume) throw new Error('Книга с таким ISBN не найдена в Google Books.');
+
+  return {
+    title: [volume.title, volume.subtitle].filter(Boolean).join(': '),
+    authors: volume.authors || [],
+    publisher: volume.publisher || '',
+    publishedYear: parsePublishedYear(volume.publishedDate),
+    coverUrl: volume.imageLinks?.thumbnail?.replace('http://', 'https://') || volume.imageLinks?.smallThumbnail?.replace('http://', 'https://') || '',
+    description: volume.description || '',
+    tags: volume.categories || [],
+    source: 'Google Books',
+  };
+}
+
+async function lookupOpenLibraryBookByIsbn(normalizedIsbn) {
+  const response = await fetch(`https://openlibrary.org/api/books?bibkeys=ISBN:${encodeURIComponent(normalizedIsbn)}&jscmd=data&format=json`, {
+    headers: { Accept: 'application/json' },
+  });
+
+  if (!response.ok) throw new Error('Open Library временно недоступна.');
+
+  const data = await response.json();
+  const book = data[`ISBN:${normalizedIsbn}`];
+  if (!book) throw new Error('Книга с таким ISBN не найдена в Open Library.');
+
+  const authors = (book.authors || []).map((author) => author.name).filter(Boolean);
+  const tags = (book.subjects || []).slice(0, 6).map((subject) => subject.name).filter(Boolean);
+  const coverUrl = book.cover?.large || book.cover?.medium || book.cover?.small || `https://covers.openlibrary.org/b/isbn/${normalizedIsbn}-L.jpg`;
+  const description = book.notes || book.excerpts?.[0]?.text || '';
+
+  return {
+    title: book.title || '',
+    authors,
+    publisher: book.publishers?.[0]?.name || '',
+    publishedYear: parsePublishedYear(book.publish_date),
+    coverUrl,
+    description,
+    tags,
+    source: 'Open Library',
+  };
+}
+
+async function lookupIntoCurrentBookForm(isbn) {
+  const form = app.querySelector('[data-book-form]');
+  if (!form) return;
+
+  try {
+    setLookupStatus('Ищем книгу по ISBN в Google Books, затем в Open Library...', 'loading');
+    const metadata = await lookupBookByIsbn(isbn);
+    fillBookFormFromLookup(form, metadata);
+    setLookupStatus(`Данные книги загружены из ${metadata.source}. Проверьте поля и сохраните книгу.`, 'success');
+  } catch (error) {
+    setLookupStatus(error.message || 'Не удалось загрузить данные по ISBN.', 'error');
+  }
+}
+
 function updateScannerStatus(message) {
   scannerStatus = message;
   const status = app.querySelector('[data-scanner-status]');
@@ -332,7 +443,13 @@ function renderBookForm() {
       <div class="form-grid">
         <label>Название книги *<input name="title" required value="${escapeHtml(book.title)}" placeholder="Например, Мастер и Маргарита" /></label>
         <label>Авторы<input name="authors" value="${escapeHtml((book.authors || []).join(', '))}" placeholder="Через запятую" /></label>
-        <label>ISBN<input name="isbn" value="${escapeHtml(book.isbn || '')}" placeholder="978..." /></label>
+        <label>ISBN
+          <span class="isbn-lookup-row">
+            <input name="isbn" inputmode="numeric" value="${escapeHtml(book.isbn || '')}" placeholder="978..." />
+            <button class="button secondary" type="button" data-action="isbn-lookup">Загрузить</button>
+          </span>
+          <small class="lookup-status" data-lookup-status>Введите или отсканируйте ISBN, затем загрузите данные из Open Library.</small>
+        </label>
         <label>Издательство<input name="publisher" value="${escapeHtml(book.publisher || '')}" /></label>
         <label>Год<input name="publishedYear" type="number" min="0" value="${escapeHtml(book.publishedYear || '')}" /></label>
         <label>Теги<input name="tags" value="${escapeHtml((book.tags || []).join(', '))}" placeholder="фантастика, избранное" /></label>
@@ -467,6 +584,14 @@ app.addEventListener('click', async (event) => {
     scannedIsbn = value;
     editingBook = { id: null };
     render();
+    await lookupIntoCurrentBookForm(value);
+  }
+  if (action === 'isbn-lookup') {
+    const form = button.closest('[data-book-form]');
+    const value = normalizeIsbnBarcode(form?.elements.isbn?.value);
+    if (!value) return setLookupStatus('Введите корректный ISBN или EAN-13.', 'error');
+    form.elements.isbn.value = value;
+    await lookupIntoCurrentBookForm(value);
   }
   if (action === 'scan-toggle') {
     if (scannerStream) {
@@ -577,6 +702,7 @@ async function startScanner() {
           stopScanner(`Штрих-код найден: ${isbn}`);
           editingBook = { id: null };
           render();
+          await lookupIntoCurrentBookForm(isbn);
           return;
         }
         updateScannerStatus('Сканируем... держите штрих-код ровно внутри рамки.');

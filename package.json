@@ -4,8 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "python3 -m http.server 5173",
-    "build": "node --check src/main.js && node --check sw.js && python3 -m json.tool manifest.webmanifest >/dev/null",
-    "preview": "python3 -m http.server 4173"
+    "dev": "node scripts/static-server.mjs",
+    "build": "node scripts/check-conflicts.mjs && node --check src/main.js && node --check sw.js && node --check scripts/static-server.mjs && node --check backend/api/server.mjs && node --check backend/api/resolver.mjs && node --check backend/cache/sqliteCache.mjs && node --check backend/normalizer/index.mjs && node --check backend/sources/googleBooks.mjs && node --check backend/sources/openLibrary.mjs && node --check backend/sources/serp.mjs && node --check backend/sources/livelib.mjs && node scripts/validate-manifest.mjs",
+    "preview": "node scripts/static-server.mjs 4173",
+    "api": "node backend/api/server.mjs 8787"
   }
 }

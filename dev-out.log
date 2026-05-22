@@ -1,0 +1,6 @@
+
+> home-lib@0.1.0 dev
+> node scripts/static-server.mjs
+
+Serving D:\проекты\home_lib\home_lib at http://localhost:5173/
+Serving D:\проекты\home_lib\home_lib at http://localhost:5174/
