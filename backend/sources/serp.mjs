@@ -15,6 +15,7 @@ const BOOK_DOMAINS = [
   'eksmo.ru',
   'respublica.ru',
 ];
+
 export async function fetchSearchResults(query, { timeoutMs = 3000 } = {}) {
   if (process.env.SERP_MOCK_RESULTS) {
     return normalizeSerpItems(JSON.parse(process.env.SERP_MOCK_RESULTS), query);
@@ -51,13 +52,17 @@ export function normalizeSerpItems(items = [], query = '') {
       isbn: normalizeIsbn(query),
       title: item.title,
       authors: [],
+      publisher: '',
       year: undefined,
       cover: '',
+      description: item.snippet,
+      tags: [],
       sources: [SOURCE],
       links: [item.url],
       raw: { [SOURCE]: item },
     }));
 }
+
 async function fetchDuckDuckGoSerp(query, { timeoutMs = 3000 } = {}) {
   const url = `https://duckduckgo.com/html/?q=${encodeURIComponent(`${query} книга`)}`;
   const response = await fetch(url, {

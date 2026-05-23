@@ -11,6 +11,7 @@ let scannerStream = null;
 let scannerTrack = null;
 let scannerStatus = 'Можно сканировать камерой или ввести ISBN вручную.';
 let scannedIsbn = '';
+let lookupVariants = [];
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
@@ -128,14 +129,23 @@ function setFormField(form, name, value, replace = false) {
   }
 }
 
-function fillBookFormFromLookup(form, metadata) {
-  setFormField(form, 'title', metadata.title);
-  setFormField(form, 'authors', metadata.authors);
-  setFormField(form, 'publisher', metadata.publisher);
-  setFormField(form, 'publishedYear', metadata.publishedYear);
-  setFormField(form, 'coverUrl', metadata.coverUrl);
-  setFormField(form, 'description', metadata.description);
-  setFormField(form, 'tags', metadata.tags);
+function fillBookFormFromLookup(form, metadata, replace = false) {
+  setFormField(form, 'title', metadata.title, replace);
+  setFormField(form, 'authors', metadata.authors, replace);
+  setFormField(form, 'publisher', metadata.publisher, replace);
+  setFormField(form, 'publishedYear', metadata.publishedYear, replace);
+  setFormField(form, 'coverUrl', metadata.coverUrl, replace);
+  setFormField(form, 'description', metadata.description, replace);
+  setFormField(form, 'tags', metadata.tags, replace);
+}
+
+function applyLookupVariant(index) {
+  const form = app.querySelector('[data-book-form]');
+  if (!form) return;
+  const variant = lookupVariants[index];
+  if (!variant) return;
+  fillBookFormFromLookup(form, variant);
+  setLookupStatus(`Применён вариант #${index + 1} из ${lookupVariants.length} (${variant.source}).`, 'success');
 }
 
 async function lookupBookByIsbn(isbn) {
@@ -143,7 +153,7 @@ async function lookupBookByIsbn(isbn) {
   if (!normalizedIsbn) throw new Error('Введите корректный ISBN или EAN-13.');
 
   const errors = [];
-  for (const lookup of [lookupGoogleBookByIsbn, lookupOpenLibraryBookByIsbn]) {
+  for (const lookup of [lookupResolverApiByIsbn, lookupGoogleBookByIsbn, lookupOpenLibraryBookByIsbn]) {
     try {
       const metadata = await lookup(normalizedIsbn);
       if (metadata?.title) return metadata;
@@ -152,7 +162,39 @@ async function lookupBookByIsbn(isbn) {
     }
   }
 
-  throw new Error(errors.at(-1) || 'Книга с таким ISBN не найдена в Google Books и Open Library.');
+  throw new Error(errors.at(-1) || 'Книга с таким ISBN не найдена в Book Resolver API, Google Books и Open Library.');
+}
+
+async function lookupResolverApiByIsbn(normalizedIsbn) {
+  const response = await fetch(`/book/isbn/${encodeURIComponent(normalizedIsbn)}`, {
+    headers: { Accept: 'application/json' },
+  });
+
+  if (!response.ok) throw new Error('Book Resolver API временно недоступен.');
+
+  const book = await response.json();
+  if (!book?.title) throw new Error('Book Resolver API не нашёл книгу по ISBN.');
+
+  return {
+    title: book.title || '',
+    authors: book.authors || [],
+    publisher: '',
+    publishedYear: book.year || '',
+    coverUrl: book.cover || '',
+    description: '',
+    tags: book.sources || [],
+    variants: (book.variants || []).map((variant) => ({
+      title: variant.title || '',
+      authors: variant.authors || [],
+      publisher: variant.publisher || '',
+      publishedYear: variant.year || '',
+      coverUrl: variant.cover || '',
+      description: variant.description || '',
+      tags: variant.tags || [],
+      source: `Book Resolver API (${(variant.sources || []).join(', ') || 'aggregated'})`,
+    })),
+    source: `Book Resolver API (${(book.sources || []).join(', ') || 'aggregated'})`,
+  };
 }
 
 async function lookupGoogleBookByIsbn(normalizedIsbn) {
@@ -211,11 +253,18 @@ async function lookupIntoCurrentBookForm(isbn) {
   if (!form) return;
 
   try {
-    setLookupStatus('Ищем книгу по ISBN в Google Books, затем в Open Library...', 'loading');
+    setLookupStatus('Ищем книгу по ISBN через Book Resolver API, затем Google Books и Open Library...', 'loading');
     const metadata = await lookupBookByIsbn(isbn);
+    lookupVariants = metadata.variants || [];
     fillBookFormFromLookup(form, metadata);
-    setLookupStatus(`Данные книги загружены из ${metadata.source}. Проверьте поля и сохраните книгу.`, 'success');
+    if (lookupVariants.length > 1) {
+      render();
+      const renderedForm = app.querySelector('[data-book-form]');
+      if (renderedForm) fillBookFormFromLookup(renderedForm, metadata, true);
+    }
+    setLookupStatus(`Данные книги загружены из ${metadata.source}. ${lookupVariants.length > 1 ? 'Ниже доступны другие варианты.' : ''}`, 'success');
   } catch (error) {
+    lookupVariants = [];
     setLookupStatus(error.message || 'Не удалось загрузить данные по ISBN.', 'error');
   }
 }
@@ -440,6 +489,20 @@ function renderBookForm() {
 
   return `
     <form class="book-form" data-book-form>
+      ${
+        lookupVariants.length > 1
+          ? `<label>Найдено вариантов: ${lookupVariants.length}
+              <select data-action="lookup-variant">
+                ${lookupVariants
+                  .map(
+                    (item, index) =>
+                      `<option value="${index}">#${index + 1}: ${escapeHtml(item.title || 'Без названия')} — ${escapeHtml((item.authors || []).join(', ') || 'автор неизвестен')}</option>`,
+                  )
+                  .join('')}
+              </select>
+            </label>`
+          : ''
+      }
       <div class="form-grid">
         <label>Название книги *<input name="title" required value="${escapeHtml(book.title)}" placeholder="Например, Мастер и Маргарита" /></label>
         <label>Авторы<input name="authors" value="${escapeHtml((book.authors || []).join(', '))}" placeholder="Через запятую" /></label>
@@ -562,11 +625,13 @@ app.addEventListener('click', async (event) => {
   if (action === 'book-add') {
     editingBook = { id: null };
     scannedIsbn = '';
+    lookupVariants = [];
     render();
   }
   if (action === 'book-cancel') {
     editingBook = null;
     scannedIsbn = '';
+    lookupVariants = [];
     render();
   }
   if (action === 'book-edit') {
@@ -617,6 +682,9 @@ app.addEventListener('change', (event) => {
     const [cabinetId, shelfId] = input.value.split('|');
     updateActive((library) => moveBook(library, input.dataset.id, cabinetId, shelfId));
   }
+  if (input.dataset.action === 'lookup-variant') {
+    applyLookupVariant(Number(input.value || 0));
+  }
 });
 
 app.addEventListener('input', (event) => {
@@ -659,6 +727,7 @@ app.addEventListener('submit', (event) => {
   });
   editingBook = null;
   scannedIsbn = '';
+  lookupVariants = [];
 });
 
 async function startScanner() {

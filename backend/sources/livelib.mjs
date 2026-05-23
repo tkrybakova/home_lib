@@ -10,6 +10,28 @@ export async function fetchLiveLibFromSearchResults(searchResults = [], options 
   return settled.flatMap((result) => (result.status === 'fulfilled' && result.value ? [result.value] : []));
 }
 
+export async function fetchLiveLibByIsbn(isbn, { timeoutMs = 3000 } = {}) {
+  const normalized = normalizeIsbn(isbn);
+
+  const url = `https://www.livelib.ru/find/books/${normalized}`;
+
+  const html = await fetchText(url, { timeoutMs });
+
+  const matches = [...html.matchAll(/livelib\.ru\/book\/(\d+)/g)];
+
+  const bookUrls = [...new Set(
+    matches.map(m => `https://www.livelib.ru/book/${m[1]}`)
+  )].slice(0, 2);
+
+  const settled = await Promise.allSettled(
+    bookUrls.map(url => parseLiveLibBookPage(url, { timeoutMs }))
+  );
+
+  return settled
+    .filter(r => r.status === 'fulfilled')
+    .map(r => r.value);
+}
+
 export async function parseLiveLibBookPage(url, { timeoutMs = 3000 } = {}) {
   const html = await fetchText(url, { timeoutMs });
   const title = extractMeta(html, 'og:title') || extractTitle(html);

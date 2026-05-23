@@ -23,8 +23,11 @@ function normalizeBookData(book, isbnHint) {
     isbn: normalizeIsbn(isbnHint),
     title: book.title || '',
     authors: uniqueStrings((book.authors || []).map((author) => author.name)),
+    publisher: book.publishers?.[0]?.name || '',
     year: parseYear(book.publish_date),
     cover: book.cover?.large || book.cover?.medium || book.cover?.small || (isbnHint ? `https://covers.openlibrary.org/b/isbn/${isbnHint}-L.jpg` : ''),
+    description: typeof book.notes === 'string' ? book.notes : '',
+    tags: uniqueStrings((book.subjects || []).map((subject) => subject?.name || '').filter(Boolean)),
     sources: [SOURCE],
     raw: { [SOURCE]: book },
   };
@@ -36,8 +39,11 @@ function normalizeSearchDoc(doc) {
     isbn,
     title: doc.title || '',
     authors: uniqueStrings(doc.author_name || []),
+    publisher: doc.publisher?.[0] || '',
     year: doc.first_publish_year,
     cover: doc.cover_i ? `https://covers.openlibrary.org/b/id/${doc.cover_i}-L.jpg` : '',
+    description: '',
+    tags: uniqueStrings(doc.subject?.slice(0, 8) || []),
     sources: [SOURCE],
     raw: { [SOURCE]: doc },
   };

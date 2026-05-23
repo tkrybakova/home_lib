@@ -2,9 +2,9 @@ import { createReadStream, existsSync, statSync } from 'node:fs';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 import { createServer } from 'node:http';
 
-const DEFAULT_PORT = Number(process.env.PORT || process.argv[2] || 5173);
-const MAX_PORT_ATTEMPTS = 10;
+const port = Number(process.env.PORT || process.argv[2] || 5173);
 const root = resolve(process.cwd());
+const apiPort = Number(process.env.API_PORT || 8787);
 
 const contentTypes = {
   '.css': 'text/css; charset=utf-8',
@@ -17,7 +17,7 @@ const contentTypes = {
 };
 
 function resolveRequestPath(url) {
-  const decodedPath = decodeURIComponent(new URL(url, 'http://localhost').pathname);
+  const decodedPath = decodeURIComponent(new URL(url, `http://localhost:${port}`).pathname);
   const safePath = normalize(decodedPath).replace(/^([/\\])+/, '');
   const filePath = resolve(root, safePath || 'index.html');
 
@@ -32,7 +32,13 @@ function resolveRequestPath(url) {
   return filePath;
 }
 
-function handleRequest(request, response) {
+const server = createServer((request, response) => {
+  const pathname = new URL(request.url || '/', `http://localhost:${port}`).pathname;
+  if (pathname.startsWith('/book/') || pathname === '/health') {
+    proxyToApi(request, response);
+    return;
+  }
+
   const filePath = resolveRequestPath(request.url || '/');
 
   if (!filePath || !existsSync(filePath) || !statSync(filePath).isFile()) {
@@ -49,31 +55,28 @@ function handleRequest(request, response) {
   }
 
   createReadStream(filePath).pipe(response);
-}
+});
 
-function listen(preferredPort, attempt = 0) {
-  const currentPort = preferredPort + attempt;
-  const server = createServer(handleRequest);
-
-  server.once('error', (error) => {
-    if (error.code === 'EADDRINUSE' && attempt < MAX_PORT_ATTEMPTS) {
-      console.warn(`Port ${currentPort} is busy, trying ${currentPort + 1}...`);
-      listen(preferredPort, attempt + 1);
-      return;
-    }
-
-    if (error.code === 'EADDRINUSE') {
-      console.error(`Could not start static server. Ports ${preferredPort}-${currentPort} are busy.`);
-      console.error('Free one of those ports or run `npm run dev -- <port>`.');
-      process.exit(1);
-    }
-
-    throw error;
+function proxyToApi(request, response) {
+  const upstream = fetch(`http://127.0.0.1:${apiPort}${request.url || '/'}`, {
+    method: request.method || 'GET',
+    headers: { Accept: request.headers.accept || 'application/json' },
   });
 
-  server.listen(currentPort, '0.0.0.0', () => {
-    console.log(`Serving ${root} at http://localhost:${currentPort}/`);
-  });
+  upstream
+    .then(async (upstreamResponse) => {
+      const body = await upstreamResponse.text();
+      response.writeHead(upstreamResponse.status, {
+        'content-type': upstreamResponse.headers.get('content-type') || 'application/json; charset=utf-8',
+      });
+      response.end(body);
+    })
+    .catch(() => {
+      response.writeHead(502, { 'content-type': 'application/json; charset=utf-8' });
+      response.end(JSON.stringify({ error: 'Book Resolver API is unavailable' }));
+    });
 }
 
-listen(DEFAULT_PORT);
+server.listen(port, '0.0.0.0', () => {
+  console.log(`Serving ${root} at http://localhost:${port}/`);
+});

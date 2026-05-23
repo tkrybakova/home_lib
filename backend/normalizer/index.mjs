@@ -1,6 +1,6 @@
 import { normalizeIsbn, uniqueStrings } from '../utils/isbn.mjs';
 
-const PRIORITY = ['google_books', 'livelib', 'open_library', 'serp'];
+const PRIORITY = ['livelib', 'google_books', 'open_library', 'serp'];
 
 export function normalizeBooks(results = []) {
   const groups = new Map();
@@ -20,18 +20,24 @@ export function mergeBookGroup(group = []) {
   const isbn = normalizeIsbn(firstValue(byPriority, 'isbn'));
   const title = firstValue(byPriority, 'title');
   const authors = uniqueStrings(byPriority.flatMap((book) => book.authors || []));
+  const publisher = firstValue(byPriority, 'publisher');
   const year = firstValue(byPriority, 'year');
   const cover = firstValue(byPriority, 'cover');
+  const description = firstValue(byPriority, 'description');
+  const tags = uniqueStrings(byPriority.flatMap((book) => book.tags || []));
   const raw = Object.assign({}, ...byPriority.map((book) => book.raw || {}));
   const links = uniqueStrings(byPriority.flatMap((book) => book.links || []));
-  const book = { isbn, title, authors, year, cover, sources, raw, links };
+  const book = { isbn, title, authors, publisher, year, cover, description, tags, sources, raw, links };
 
   return {
     isbn: book.isbn,
     title: book.title,
     authors: book.authors,
+    publisher: book.publisher,
     year: book.year,
     cover: book.cover,
+    description: book.description,
+    tags: book.tags,
     sources: book.sources,
     confidence_score: calculateConfidence(book),
     raw,
@@ -44,8 +50,11 @@ export function toPublicBook(book) {
     isbn: book.isbn || '',
     title: book.title || '',
     authors: book.authors || [],
+    publisher: book.publisher || '',
     year: book.year || undefined,
     cover: book.cover || '',
+    description: book.description || '',
+    tags: book.tags || [],
     sources: book.sources || [],
     confidence_score: book.confidence_score || 0,
   };

@@ -35,8 +35,11 @@ function normalizeVolume(item, isbnHint) {
     isbn,
     title: [volume.title, volume.subtitle].filter(Boolean).join(': '),
     authors: uniqueStrings(volume.authors || []),
+    publisher: volume.publisher || '',
     year: parseYear(volume.publishedDate),
     cover: cover ? cover.replace('http://', 'https://') : '',
+    description: volume.description || '',
+    tags: uniqueStrings(volume.categories || []),
     sources: [SOURCE],
     raw: { [SOURCE]: item },
   };
