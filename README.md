@@ -9,17 +9,16 @@
 - добавление, переименование и удаление полок внутри шкафов;
 - добавление, редактирование, удаление и перемещение книг между полками;
 - ввод ISBN вручную и сканирование штрихкода через браузерный `BarcodeDetector`, если он доступен;
-- автозаполнение названия, авторов, издателя, года, обложки, описания и тегов по ISBN через Google Books и Open Library;
-- фильтрация книг по названию, автору, ISBN, тегу, шкафу, полке и году;
+- автозаполнение названия, авторов, издателя, года, обложки, описания, тегов, размеров, веса и числа страниц по ISBN через LiveLib, ISBN Search и ISBNdb;- фильтрация книг по названию, автору, ISBN, тегу, шкафу, полке и году;
 - сортировка по названию, автору, году издания и дате добавления.
 
 ## Запуск
 
 ```bash
-npm run dev
+npm run start
 ```
 
-Затем откройте адрес из консоли, обычно `http://localhost:5173`. Если `5173` занят, dev-сервер автоматически попробует следующий порт; при необходимости можно запустить конкретный порт через `npm run dev -- 5180`. Камера работает на `localhost`; при публикации для Android нужен HTTPS. Скрипты запуска используют Node.js и работают в Windows PowerShell, macOS и Linux без Python.
+Команда запускает и frontend (`http://localhost:5173`), и локальный Book Resolver API (`http://localhost:8787`). Если нужен только статический интерфейс без API, используйте `npm run dev`. Камера работает на `localhost`; при публикации для Android нужен HTTPS. Скрипты запуска используют Node.js и работают в Windows PowerShell, macOS и Linux без Python.
 
 ## Проверка
 
@@ -31,7 +30,7 @@ npm run build
 
 ## ISBN и автозаполнение
 
-В форме книги нажмите «Загрузить» рядом с ISBN. Приложение сначала обращается к Google Books API (`https://www.googleapis.com/books/v1/volumes?q=isbn:<ISBN>`), а если данных нет или сервис недоступен — пробует Open Library Books API (`https://openlibrary.org/api/books`). Заполняются доступные поля: название, авторы, издательство, год, обложка, описание и теги. После сканирования штрихкода ISBN форма открывается автоматически и сразу пытается загрузить метаданные. Если книги нет в обоих источниках или телефон офлайн, поля можно заполнить вручную.
+В форме книги нажмите «Загрузить» рядом с ISBN. Интерфейс обращается только к локальному Book Resolver API, а backend параллельно использует открытые HTML-источники: LiveLib, `https://isbnsearch.org/isbn/<ISBN>` и parser страницы `https://isbndb.com/book/<ISBN>`. Google Books и Open Library больше не используются. Заполняются доступные поля: название, авторы, издательство, год, обложка, описание, теги, размеры, вес и число страниц. После сканирования штрихкода ISBN форма открывается автоматически и сразу пытается загрузить метаданные. Если источники вернули несколько карточек, форма показывает выпадающий список вариантов, и выбранный вариант полностью перезаписывает поля формы.
 
 ## Примечания по сканеру
 
@@ -104,9 +103,15 @@ curl "http://localhost:8787/book/search?q=мастер%20и%20маргарита
   "isbn": "9785171776534",
   "title": "Название книги",
   "authors": ["Автор"],
+  "publisher": "Издательство",
   "year": 2024,
   "cover": "https://...",
-  "sources": ["google_books", "open_library"],
+  "description": "Описание",
+  "tags": ["роман"],
+  "dimensions": "20 x 13 cm",
+  "weight": "450 г",
+  "pages": 416,
+  "sources": ["livelib", "isbn_db"],
   "confidence_score": 0.85,
   "cache": { "hit": false }
 }
@@ -116,12 +121,12 @@ curl "http://localhost:8787/book/search?q=мастер%20и%20маргарита
 
 Сервис запускает источники параллельно и не ломает весь ответ, если один источник упал:
 
-1. `backend/sources/googleBooks.mjs` — Google Books API.
-2. `backend/sources/openLibrary.mjs` — Open Library API.
-3. `backend/sources/serp.mjs` — абстрактный SERP-слой. Без `SERP_API_URL` возвращает пустой список; для тестов можно передать `SERP_MOCK_RESULTS` JSON.
-4. `backend/sources/livelib.mjs` — HTML parser страниц LiveLib, найденных через SERP.
+1. `backend/sources/livelib.mjs` — HTML parser страниц LiveLib, найденных через SERP и прямой ISBN-поиск.
+2. `backend/sources/isbnSearch.mjs` — parser страницы `https://isbnsearch.org/isbn/<ISBN>`.
+3. `backend/sources/isbnDb.mjs` — parser страницы `https://isbndb.com/book/<ISBN>`; дополнительно вытаскивает размеры, вес и страницы из HTML/embedded JSON, если они есть.
+4. `backend/sources/serp.mjs` — поисковый слой для нахождения книжных страниц, в первую очередь LiveLib; для тестов можно передать `SERP_MOCK_RESULTS` JSON.
 
-`backend/normalizer/index.mjs` объединяет одинаковые книги, удаляет дубликаты авторов, выбирает поля по приоритету `Google Books > LiveLib > Open Library > SERP` и рассчитывает `confidence_score`.
+`backend/normalizer/index.mjs` объединяет одинаковые книги, удаляет дубликаты авторов, выбирает поля по приоритету `LiveLib > ISBNdb > ISBN Search > SERP` и рассчитывает `confidence_score`.
 
 ### SQLite cache
 
@@ -145,5 +150,4 @@ books (
 - `BOOK_CACHE_TTL_DAYS` — TTL кэша, по умолчанию 14 дней;
 - `BOOK_SOURCE_TIMEOUT_MS` — таймаут источника, по умолчанию 3000 мс;
 - `BOOK_RESOLVER_PORT` — порт API, по умолчанию 8787;
-- `SERP_API_URL` — endpoint внешнего SERP API, который принимает query-параметр `q`;
 - `SERP_MOCK_RESULTS` — JSON-массив mock SERP результатов для локального тестирования.

@@ -1,6 +1,6 @@
 import { normalizeIsbn, uniqueStrings } from '../utils/isbn.mjs';
 
-const PRIORITY = ['livelib', 'google_books', 'open_library', 'serp'];
+const PRIORITY = ['livelib', 'isbn_db', 'isbn_search', 'serp'];
 
 export function normalizeBooks(results = []) {
   const groups = new Map();
@@ -27,7 +27,10 @@ export function mergeBookGroup(group = []) {
   const tags = uniqueStrings(byPriority.flatMap((book) => book.tags || []));
   const raw = Object.assign({}, ...byPriority.map((book) => book.raw || {}));
   const links = uniqueStrings(byPriority.flatMap((book) => book.links || []));
-  const book = { isbn, title, authors, publisher, year, cover, description, tags, sources, raw, links };
+  const dimensions = firstValue(byPriority, 'dimensions');
+  const weight = firstValue(byPriority, 'weight');
+  const pages = firstValue(byPriority, 'pages');
+  const book = { isbn, title, authors, publisher, year, cover, description, tags, dimensions, weight, pages, sources, raw, links };
 
   return {
     isbn: book.isbn,
@@ -38,6 +41,9 @@ export function mergeBookGroup(group = []) {
     cover: book.cover,
     description: book.description,
     tags: book.tags,
+    dimensions: book.dimensions,
+    weight: book.weight,
+    pages: book.pages,
     sources: book.sources,
     confidence_score: calculateConfidence(book),
     raw,
@@ -55,6 +61,9 @@ export function toPublicBook(book) {
     cover: book.cover || '',
     description: book.description || '',
     tags: book.tags || [],
+    dimensions: book.dimensions || '',
+    weight: book.weight || '',
+    pages: book.pages || undefined,
     sources: book.sources || [],
     confidence_score: book.confidence_score || 0,
   };
@@ -78,6 +87,8 @@ function calculateConfidence(book) {
   if ((book.authors || []).length > 0) score += 0.1;
   if (book.year) score += 0.06;
   if (book.cover) score += 0.06;
+  if (book.publisher) score += 0.04;
+  if (book.description) score += 0.04;
   return Math.min(1, Number(score.toFixed(2)));
 }
 
