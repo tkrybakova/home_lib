@@ -1,6 +1,6 @@
 import { state, ui, persist, lib, findRoom, findCabinet, findShelf, findShelfById, getParentEntity } from './state.js';
 import { showModal, closeModal } from './modal.js';
-import { showToast } from './render.js';
+import { render, showToast } from './render.js';
 import { createLibrary, createRoom, createCabinet, createShelf, createBook } from './factories.js';
 import { fetchBookByIsbn } from './booksApi.js';
 import { now } from './utils.js';
@@ -214,6 +214,10 @@ export function deleteEntityWithConfirm(entity, type) {
         if (idx !== -1) {
           state.libraries.splice(idx, 1);
           if (state.activeLibraryId === entity.id) state.activeLibraryId = null;
+          ui.step = 'libraries';
+          ui.roomId = null;
+          ui.cabinetId = null;
+          ui.shelfId = null;
           removed = true;
         }
       } else if (type === 'room') {
@@ -222,7 +226,10 @@ export function deleteEntityWithConfirm(entity, type) {
           const idx = library.rooms.findIndex(r => r.id === entity.id);
           if (idx !== -1) {
             library.rooms.splice(idx, 1);
+            ui.step = 'rooms';
             ui.roomId = null;
+            ui.cabinetId = null;
+            ui.shelfId = null;
             removed = true;
           }
         }
@@ -232,7 +239,9 @@ export function deleteEntityWithConfirm(entity, type) {
           const idx = room.cabinets.findIndex(c => c.id === entity.id);
           if (idx !== -1) {
             room.cabinets.splice(idx, 1);
+            ui.step = 'cabinets';
             ui.cabinetId = null;
+            ui.shelfId = null;
             removed = true;
           }
         }
@@ -242,6 +251,7 @@ export function deleteEntityWithConfirm(entity, type) {
           const idx = cabinet.shelves.findIndex(s => s.id === entity.id);
           if (idx !== -1) {
             cabinet.shelves.splice(idx, 1);
+            ui.step = 'shelves';
             ui.shelfId = null;
             removed = true;
           }
@@ -267,6 +277,3 @@ export function deleteEntityWithConfirm(entity, type) {
     }
   });
 }
-
-// Импорт render и updateUI для перерисовки
-import { render } from './render.js';

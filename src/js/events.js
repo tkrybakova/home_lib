@@ -86,7 +86,7 @@ export function initEvents() {
       case 'back':
         switch (ui.step) {
           case 'books':
-            go('shelves', { cabinetId: ui.cabinetId });
+            go('shelves', { roomId: ui.roomId, cabinetId: ui.cabinetId });
             break;
 
           case 'shelves':
@@ -147,6 +147,14 @@ export function initEvents() {
         go('shelves', {
           roomId: ui.roomId,
           cabinetId: id
+        });
+        break;
+
+      case 'open-shelf':
+        go('books', {
+          roomId: ui.roomId,
+          cabinetId: ui.cabinetId,
+          shelfId: id
         });
         break;
 
