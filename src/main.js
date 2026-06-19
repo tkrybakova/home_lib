@@ -1,783 +1,1006 @@
+// Ключи для хранения данных в localStorage
 const STORAGE_KEY = 'home-lib:libraries';
 const ACTIVE_KEY = 'home-lib:active-library';
 
+// Корневой элемент приложения
 const app = document.querySelector('#app');
+
+// Загружаем начальное состояние из localStorage
 let state = loadState();
-let selectedCabinetId = '';
-let filters = { query: '', cabinet: '', shelf: '', author: '', tag: '', year: '' };
-let sort = { key: 'title', direction: 'asc' };
-let editingBook = null;
-let scannerStream = null;
-let scannerTrack = null;
-let scannerStatus = 'Можно сканировать камерой или ввести ISBN вручную.';
-let scannedIsbn = '';
-let lookupVariants = [];
-let currentView = 'libraries';
 
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(() => undefined);
-  });
-}
+// UI состояние
+let ui = {
+  step: 'libraries',     // libraries → rooms → cabinets → shelves → books
+  libraryId: state.activeLibraryId,
+  roomId: null,
+  cabinetId: null,
+  shelfId: null
+};
 
-function id(prefix) {
-  return `${prefix}-${crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
+// Состояние модального окна
+let modal = {
+  isOpen: false,
+  type: null,
+  data: null,
+  onSave: null,
+  onClose: null
+};
+
+/* ---------- Утилиты ---------- */
+
+function id(p) {
+  return `${p}-${crypto?.randomUUID?.() ?? Date.now()}`;
 }
 
 function now() {
   return new Date().toISOString();
 }
 
-function createShelf(order = 0, name = `Полка ${order + 1}`) {
-  return { id: id('shelf'), name, order, books: [] };
+function esc(v = '') {
+  return String(v)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;');
 }
 
-function createLibrary(name = 'Моя библиотека') {
-  const createdAt = now();
+function formatDate(date) {
+  return new Date(date).toLocaleDateString('ru-RU', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric'
+  });
+}
+
+/* ---------- Фабрики данных ---------- */
+
+function createBook(title = 'Книга', isbn = '', author = '', description = '') {
   return {
-    id: id('library'),
-    name,
-    description: '',
-    createdAt,
-    updatedAt: createdAt,
-    cabinets: [{ id: id('cabinet'), name: 'Главный шкаф', location: 'Дом', shelves: [createShelf(0)] }],
+    id: id('book'),
+    title,
+    isbn: isbn || '',
+    author: author || '',
+    description: description || '',
+    createdAt: now(),
+    updatedAt: now()
   };
 }
 
+// Новая структура полки: без capacity, с height и depth
+function createShelf(name = 'Полка', lengthCm = 100, heightCm = 30, depthCm = 40) {
+  return {
+    id: id('shelf'),
+    name,
+    lengthCm: Number(lengthCm) || 100,
+    heightCm: Number(heightCm) || 30,
+    depthCm: Number(depthCm) || 40,
+    books: [],
+    createdAt: now(),
+    updatedAt: now()
+  };
+}
+
+function createCabinet(name = 'Шкаф') {
+  return {
+    id: id('cabinet'),
+    name,
+    shelves: [],
+    createdAt: now(),
+    updatedAt: now()
+  };
+}
+
+function createRoom(name = 'Помещение') {
+  return {
+    id: id('room'),
+    name,
+    cabinets: [],
+    createdAt: now(),
+    updatedAt: now()
+  };
+}
+
+function createLibrary(name = 'Библиотека') {
+  return {
+    id: id('library'),
+    name,
+    rooms: [],
+    createdAt: now(),
+    updatedAt: now()
+  };
+}
+
+/* ---------- Миграция старых данных ---------- */
+function migrateState(state) {
+  console.log('🔄 Миграция началась');
+  if (!Array.isArray(state.libraries)) state.libraries = [];
+  state.libraries = state.libraries.map(lib => {
+    lib.rooms = (lib.rooms || []).map(room => {
+      room.cabinets = (room.cabinets || []).map(cab => {
+        if (cab.books && !cab.shelves) {
+          // Старый формат: книги прямо в шкафу → создаём одну полку
+          const shelf = createShelf('Основная полка', 100, 30, 40);
+          shelf.books = cab.books;
+          cab.shelves = [shelf];
+          delete cab.books;
+        } else if (!cab.shelves) {
+          cab.shelves = [createShelf('Основная полка', 100, 30, 40)];
+        }
+        // Если у полок есть capacity — удаляем
+        cab.shelves = cab.shelves.map(s => {
+          if (s.capacity !== undefined) {
+            delete s.capacity;
+          }
+          if (s.heightCm === undefined) s.heightCm = 30;
+          if (s.depthCm === undefined) s.depthCm = 40;
+          return s;
+        });
+        return cab;
+      });
+      return room;
+    });
+    return lib;
+  });
+  console.log('🔄 Миграция завершена');
+  return state;
+}
+
+/* ---------- Работа с хранилищем ---------- */
+
 function loadState() {
   try {
-    const libraries = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-    const safeLibraries = Array.isArray(libraries) && libraries.length ? libraries : [createLibrary()];
-    const savedActiveId = localStorage.getItem(ACTIVE_KEY);
-    return {
-      libraries: safeLibraries,
-      activeLibraryId: safeLibraries.some((library) => library.id === savedActiveId) ? savedActiveId : safeLibraries[0].id,
-    };
-  } catch {
-    const library = createLibrary();
-    return { libraries: [library], activeLibraryId: library.id };
+    const raw = localStorage.getItem(STORAGE_KEY);
+    console.log('📂 Читаем из localStorage:', raw);
+    const data = JSON.parse(raw || '[]');
+    if (!data.length) {
+      console.log('📂 Данных нет, возвращаем пустое состояние');
+      return { libraries: [], activeLibraryId: null };
+    }
+    const libs = data;
+    const active = localStorage.getItem(ACTIVE_KEY);
+    const activeId = libs.find(l => l.id === active)?.id || null;
+    const migrated = migrateState({ libraries: libs, activeLibraryId: activeId });
+    if (migrated.libraries !== libs) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated.libraries));
+      console.log('🔄 Миграция сохранена в localStorage');
+    }
+    return migrated;
+  } catch (e) {
+    console.error('❌ Ошибка загрузки состояния:', e);
+    return { libraries: [], activeLibraryId: null };
   }
 }
 
 function persist() {
+  console.log('💾 Сохраняем:', state.libraries);
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.libraries));
-  localStorage.setItem(ACTIVE_KEY, state.activeLibraryId);
+  if (state.activeLibraryId) {
+    localStorage.setItem(ACTIVE_KEY, state.activeLibraryId);
+  } else {
+    localStorage.removeItem(ACTIVE_KEY);
+  }
 }
 
-function activeLibrary() {
-  return state.libraries.find((library) => library.id === state.activeLibraryId) || state.libraries[0];
+function lib() {
+  return state.libraries.find(l => l.id === state.activeLibraryId) || null;
 }
 
-function updateActive(updater) {
-  state.libraries = state.libraries.map((library) =>
-    library.id === state.activeLibraryId ? { ...updater(library), updatedAt: now() } : library,
-  );
-  persist();
+/* ---------- Навигация ---------- */
+
+function go(step, payload = {}) {
+  ui = { ...ui, step, ...payload };
   render();
 }
 
-function allBooks(library = activeLibrary()) {
-  return library.cabinets.flatMap((cabinet) =>
-    cabinet.shelves.flatMap((shelf) =>
-      shelf.books.map((book) => ({ book, cabinetId: cabinet.id, cabinetName: cabinet.name, shelfId: shelf.id, shelfName: shelf.name })),
-    ),
-  );
+/* ---------- Вспомогательные функции ---------- */
+
+function getParentEntity() {
+  if (ui.step === 'rooms') return lib();
+  if (ui.step === 'cabinets') return findRoom();
+  if (ui.step === 'shelves') return findCabinet();
+  if (ui.step === 'books') return findShelf();
+  return null;
 }
 
-function countBooks(cabinet) {
-  return cabinet.shelves.reduce((sum, shelf) => sum + shelf.books.length, 0);
+function findRoom() {
+  const library = lib();
+  if (!library) return null;
+  return library.rooms?.find(r => r.id === ui.roomId) || null;
 }
 
-function escapeHtml(value = '') {
-  return String(value)
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#039;');
+function findCabinet() {
+  const room = findRoom();
+  if (!room) return null;
+  return room.cabinets?.find(c => c.id === ui.cabinetId) || null;
 }
 
-function list(value) {
-  return value
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean);
+function findShelf() {
+  const cabinet = findCabinet();
+  if (!cabinet) return null;
+  return cabinet.shelves?.find(s => s.id === ui.shelfId) || null;
 }
 
-function normalizeIsbnBarcode(rawValue = '') {
-  const digits = String(rawValue).replace(/[^0-9Xx]/g, '').toUpperCase();
-  if (digits.length === 13 && (digits.startsWith('978') || digits.startsWith('979'))) return digits;
-  if (digits.length === 10) return digits;
-  return digits.length >= 8 ? digits : '';
-}
+/* ---------- CRUD операции ---------- */
 
-function parsePublishedYear(value = '') {
-  return String(value).match(/\b(1[5-9]\d{2}|20\d{2})\b/)?.[0] || '';
-}
-
-function setLookupStatus(message, type = 'info') {
-  const status = app.querySelector('[data-lookup-status]');
-  if (!status) return;
-  status.textContent = message;
-  status.dataset.type = type;
-}
-
-function setFormField(form, name, value, replace = false) {
-  const field = form.elements[name];
-  if (!field || value === undefined || value === null || value === '') return;
-  if (replace || !String(field.value || '').trim()) {
-    field.value = Array.isArray(value) ? value.join(', ') : value;
-  }
-}
-
-function fillBookFormFromLookup(form, metadata, replace = false) {
-  setFormField(form, 'title', metadata.title, replace);
-  setFormField(form, 'authors', metadata.authors, replace);
-  setFormField(form, 'publisher', metadata.publisher, replace);
-  setFormField(form, 'publishedYear', metadata.publishedYear, replace);
-  setFormField(form, 'coverUrl', metadata.coverUrl, replace);
-  setFormField(form, 'description', metadata.description, replace);
-  setFormField(form, 'tags', metadata.tags, replace);
-  setFormField(form, 'dimensions', metadata.dimensions, replace);
-  setFormField(form, 'weight', metadata.weight, replace);
-  setFormField(form, 'pages', metadata.pages, replace);
-}
-
-
-function applyLookupVariant(index) {
-  const form = app.querySelector('[data-book-form]');
-  if (!form) return;
-  const variant = lookupVariants[index];
-  if (!variant) return;
-  fillBookFormFromLookup(form, variant, true);
-  setLookupStatus(`Применён вариант #${index + 1} из ${lookupVariants.length} (${variant.source}).`, 'success');
-}
-
-async function lookupBookByIsbn(isbn) {
-  const normalizedIsbn = normalizeIsbnBarcode(isbn);
-  if (!normalizedIsbn) throw new Error('Введите корректный ISBN или EAN-13.');
-
-  return lookupResolverApiByIsbn(normalizedIsbn);
-}
-
-async function lookupResolverApiByIsbn(normalizedIsbn) {
-  const response = await fetch(`/book/isbn/${encodeURIComponent(normalizedIsbn)}`, {
-    headers: { Accept: 'application/json' },
-  });
-
-  if (!response.ok) throw new Error('Book Resolver API не нашёл книгу по ISBN через LiveLib, ISBN Search или ISBNdb.');
-
-  const book = await response.json();
-  if (!book?.title) throw new Error('Book Resolver API не вернул название книги.');
-
-  const mapVariant = (variant) => ({
-    isbn: variant.isbn || normalizedIsbn,
-    title: variant.title || '',
-    authors: variant.authors || [],
-    publisher: variant.publisher || '',
-    publishedYear: variant.year || '',
-    coverUrl: variant.cover || '',
-    description: variant.description || '',
-    tags: variant.tags || [],
-    dimensions: variant.dimensions || '',
-    weight: variant.weight || '',
-    pages: variant.pages || '',
-    source: (variant.sources || []).join(', ') || 'book_resolver',
-  });
-
-  return {
-    ...mapVariant(book),
-    variants: (book.variants?.length ? book.variants : [book]).map(mapVariant),
-    source: (book.sources || []).join(', ') || 'book_resolver',
-  };
-}
-
-async function lookupIntoCurrentBookForm(isbn) {
-  const form = app.querySelector('[data-book-form]');
-  if (!form) return;
-
-  try {
-    setLookupStatus('Ищем книгу по ISBN через Book Resolver API: LiveLib, ISBN Search и ISBNdb...', 'loading');
-    const metadata = await lookupBookByIsbn(isbn);
-    lookupVariants = metadata.variants || [];
-    fillBookFormFromLookup(form, metadata, true);
-    if (lookupVariants.length > 1) {
-      render();
-      const renderedForm = app.querySelector('[data-book-form]');
-      if (renderedForm) fillBookFormFromLookup(renderedForm, metadata, true);
+function addLibrary() {
+  showModal('edit', {
+    title: 'Новая библиотека',
+    fields: [
+      { key: 'name', label: 'Название библиотеки', type: 'text', placeholder: 'Моя библиотека', required: true }
+    ],
+    onSave: (data) => {
+      const l = createLibrary(data.name);
+      state.libraries.push(l);
+      state.activeLibraryId = l.id;
+      persist();
+      go('rooms', { libraryId: l.id });
     }
-    setLookupStatus(`Данные книги загружены из ${metadata.source}. ${lookupVariants.length > 1 ? 'Ниже доступны другие варианты.' : ''}`, 'success');
-  } catch (error) {
-    lookupVariants = [];
-    setLookupStatus(error.message || 'Не удалось загрузить данные по ISBN.', 'error');
+  });
+}
+
+function addRoom() {
+  const library = lib();
+  if (!library) return showToast('Сначала создайте библиотеку', 'error');
+  showModal('edit', {
+    title: 'Новое помещение',
+    fields: [
+      { key: 'name', label: 'Название помещения', type: 'text', placeholder: 'Гостиная', required: true }
+    ],
+    onSave: (data) => {
+      library.rooms.push(createRoom(data.name));
+      persist();
+      render();
+    }
+  });
+}
+
+function addCabinet() {
+  const room = findRoom();
+  if (!room) return showToast('Сначала выберите помещение', 'error');
+  showModal('edit', {
+    title: 'Новый шкаф',
+    fields: [
+      { key: 'name', label: 'Название шкафа', type: 'text', placeholder: 'Книжный шкаф', required: true }
+    ],
+    onSave: (data) => {
+      room.cabinets.push(createCabinet(data.name));
+      persist();
+      render();
+    }
+  });
+}
+
+function addShelf() {
+  const cabinet = findCabinet();
+  if (!cabinet) return showToast('Сначала выберите шкаф', 'error');
+  showModal('edit', {
+    title: 'Новая полка',
+    fields: [
+      { key: 'name', label: 'Название полки', type: 'text', placeholder: 'Верхняя полка', required: true },
+      { key: 'lengthCm', label: 'Длина (см)', type: 'number', placeholder: '100', value: '100', required: true },
+      { key: 'heightCm', label: 'Высота (см)', type: 'number', placeholder: '30', value: '30', required: true },
+      { key: 'depthCm', label: 'Глубина (см)', type: 'number', placeholder: '40', value: '40', required: true }
+    ],
+    onSave: (data) => {
+      cabinet.shelves.push(createShelf(data.name, data.lengthCm, data.heightCm, data.depthCm));
+      persist();
+      render();
+    }
+  });
+}
+
+function addBook() {
+  const shelf = findShelf();
+  if (!shelf) return showToast('Сначала выберите полку', 'error');
+  // Проверка вместимости убрана
+  showModal('edit', {
+    title: 'Новая книга',
+    fields: [
+      { key: 'title', label: 'Название книги', type: 'text', placeholder: 'Война и мир', required: true },
+      { key: 'author', label: 'Автор', type: 'text', placeholder: 'Лев Толстой' },
+      { key: 'isbn', label: 'ISBN (опционально)', type: 'text', placeholder: '978-5-17-123456-7' },
+      { key: 'description', label: 'Описание', type: 'textarea', placeholder: 'Краткое описание книги...' }
+    ],
+    onSave: (data) => {
+      shelf.books.push(createBook(data.title, data.isbn, data.author, data.description));
+      persist();
+      render();
+    }
+  });
+}
+
+async function addBookByIsbn() {
+  const shelf = findShelf();
+  if (!shelf) return showToast('Сначала выберите полку', 'error');
+  showModal('add-book-isbn', {
+    title: 'Добавить книгу по ISBN',
+    fields: [
+      { key: 'isbn', label: 'ISBN', type: 'text', placeholder: '978-5-17-123456-7', required: true }
+    ],
+    onSave: async (data) => {
+      const isbn = data.isbn.replace(/[^0-9Xx]/g, '').toUpperCase();
+      try {
+        const bookData = await fetchBookByIsbn(isbn);
+        if (bookData) {
+          shelf.books.push(createBook(bookData.title, bookData.isbn, bookData.author, bookData.description));
+          persist();
+          render();
+          showToast(`Книга "${bookData.title}" добавлена!`, 'success');
+        } else {
+          showModal('edit', {
+            title: 'Книга не найдена. Введите данные вручную',
+            fields: [
+              { key: 'title', label: 'Название книги', type: 'text', placeholder: 'Название', required: true },
+              { key: 'author', label: 'Автор', type: 'text', placeholder: 'Автор' },
+              { key: 'isbn', label: 'ISBN', type: 'text', value: isbn },
+              { key: 'description', label: 'Описание', type: 'textarea', placeholder: 'Описание' }
+            ],
+            onSave: (manualData) => {
+              shelf.books.push(createBook(manualData.title, manualData.isbn, manualData.author, manualData.description));
+              persist();
+              render();
+              showToast('Книга добавлена вручную', 'success');
+            }
+          });
+        }
+      } catch (error) {
+        showToast('Ошибка: ' + error.message, 'error');
+      }
+    }
+  });
+}
+
+async function fetchBookByIsbn(isbn) {
+  const apiUrl = process.env.BOOK_API_URL || 'http://localhost:8787/book/isbn/';
+  const response = await fetch(`${apiUrl}${encodeURIComponent(isbn)}`);
+  if (!response.ok) {
+    if (response.status === 404) return null;
+    throw new Error(`HTTP ${response.status}`);
   }
-}
-
-function updateScannerStatus(message) {
-  scannerStatus = message;
-  const status = app.querySelector('[data-scanner-status]');
-  if (status) status.textContent = message;
-}
-
-function stopScanner(message = 'Сканирование остановлено. Можно ввести ISBN вручную.') {
-  scannerStream?.getTracks().forEach((track) => track.stop());
-  scannerStream = null;
-  scannerTrack = null;
-  updateScannerStatus(message);
-  const button = app.querySelector('[data-action="scan-toggle"]');
-  if (button) button.textContent = 'Сканировать';
-}
-
-function findBook(bookId) {
-  return allBooks().find(({ book }) => book.id === bookId);
-}
-
-function removeBook(library, bookId) {
+  const data = await response.json();
   return {
-    ...library,
-    cabinets: library.cabinets.map((cabinet) => ({
-      ...cabinet,
-      shelves: cabinet.shelves.map((shelf) => ({ ...shelf, books: shelf.books.filter((book) => book.id !== bookId) })),
-    })),
+    title: data.title || '',
+    author: (data.authors || []).join(', '),
+    isbn: data.isbn || isbn,
+    description: data.description || ''
   };
 }
 
-function moveBook(library, bookId, cabinetId, shelfId) {
-  let moved;
-  const cleaned = removeBook(library, bookId);
-  const source = findBook(bookId);
-  moved = source?.book;
-  if (!moved) return library;
-
-  return {
-    ...cleaned,
-    cabinets: cleaned.cabinets.map((cabinet) =>
-      cabinet.id === cabinetId
-        ? { ...cabinet, shelves: cabinet.shelves.map((shelf) => (shelf.id === shelfId ? { ...shelf, books: [...shelf.books, moved] } : shelf)) }
-        : cabinet,
-    ),
-  };
+function editEntity(entity, type) {
+  const fields = [];
+  let title = 'Редактировать';
+  if (type === 'book') {
+    title = 'Редактировать книгу';
+    fields.push(
+      { key: 'title', label: 'Название', type: 'text', value: entity.title, required: true },
+      { key: 'author', label: 'Автор', type: 'text', value: entity.author || '' },
+      { key: 'isbn', label: 'ISBN', type: 'text', value: entity.isbn || '' },
+      { key: 'description', label: 'Описание', type: 'textarea', value: entity.description || '' }
+    );
+  } else if (type === 'shelf') {
+    title = 'Редактировать полку';
+    fields.push(
+      { key: 'name', label: 'Название', type: 'text', value: entity.name, required: true },
+      { key: 'lengthCm', label: 'Длина (см)', type: 'number', value: entity.lengthCm, required: true },
+      { key: 'heightCm', label: 'Высота (см)', type: 'number', value: entity.heightCm, required: true },
+      { key: 'depthCm', label: 'Глубина (см)', type: 'number', value: entity.depthCm, required: true }
+    );
+  } else if (type === 'library') {
+    title = 'Редактировать библиотеку';
+    fields.push({ key: 'name', label: 'Название', type: 'text', value: entity.name, required: true });
+  } else if (type === 'room') {
+    title = 'Редактировать помещение';
+    fields.push({ key: 'name', label: 'Название', type: 'text', value: entity.name, required: true });
+  } else if (type === 'cabinet') {
+    title = 'Редактировать шкаф';
+    fields.push({ key: 'name', label: 'Название', type: 'text', value: entity.name, required: true });
+  } else {
+    fields.push({ key: 'name', label: 'Название', type: 'text', value: entity.name || entity.title, required: true });
+  }
+  showModal('edit', {
+    title,
+    fields,
+    onSave: (data) => {
+      if (type === 'book') {
+        entity.title = data.title;
+        entity.author = data.author || '';
+        entity.isbn = data.isbn || '';
+        entity.description = data.description || '';
+      } else if (type === 'shelf') {
+        entity.name = data.name;
+        entity.lengthCm = Number(data.lengthCm) || 100;
+        entity.heightCm = Number(data.heightCm) || 30;
+        entity.depthCm = Number(data.depthCm) || 40;
+      } else {
+        entity.name = data.name;
+      }
+      entity.updatedAt = now();
+      persist();
+      render();
+      showToast('Сохранено', 'success');
+    }
+  });
 }
 
-function getFilteredBooks() {
-  const needle = filters.query.trim().toLowerCase();
-  const author = filters.author.trim().toLowerCase();
-  const tag = filters.tag.trim().toLowerCase();
-  const year = filters.year.trim();
+function deleteEntityWithConfirm(entity, type) {
+  const name = entity.name || entity.title || 'элемент';
+  showModal('confirm', {
+    title: 'Подтверждение удаления',
+    message: `Удалить «${name}»?`,
+    onConfirm: () => {
+      let removed = false;
+      if (type === 'library') {
+        const idx = state.libraries.findIndex(l => l.id === entity.id);
+        if (idx !== -1) {
+          state.libraries.splice(idx, 1);
+          if (state.activeLibraryId === entity.id) state.activeLibraryId = null;
+          removed = true;
+        }
+      } else if (type === 'room') {
+        const library = lib();
+        if (library) {
+          const idx = library.rooms.findIndex(r => r.id === entity.id);
+          if (idx !== -1) {
+            library.rooms.splice(idx, 1);
+            ui.roomId = null;
+            removed = true;
+          }
+        }
+      } else if (type === 'cabinet') {
+        const room = findRoom();
+        if (room) {
+          const idx = room.cabinets.findIndex(c => c.id === entity.id);
+          if (idx !== -1) {
+            room.cabinets.splice(idx, 1);
+            ui.cabinetId = null;
+            removed = true;
+          }
+        }
+      } else if (type === 'shelf') {
+        const cabinet = findCabinet();
+        if (cabinet) {
+          const idx = cabinet.shelves.findIndex(s => s.id === entity.id);
+          if (idx !== -1) {
+            cabinet.shelves.splice(idx, 1);
+            ui.shelfId = null;
+            removed = true;
+          }
+        }
+      } else if (type === 'book') {
+        const shelf = findShelf();
+        if (shelf) {
+          const idx = shelf.books.findIndex(b => b.id === entity.id);
+          if (idx !== -1) {
+            shelf.books.splice(idx, 1);
+            removed = true;
+          }
+        }
+      }
+      if (removed) {
+        persist();
+        render();
+        showToast('Удалено', 'info');
+      }
+    }
+  });
+}
 
-  return allBooks()
-    .filter(({ book, cabinetId, shelfId }) => {
-      const haystack = [book.title, book.isbn, ...(book.authors || []), ...(book.tags || [])].join(' ').toLowerCase();
-      return (
-        (!needle || haystack.includes(needle)) &&
-        (!filters.cabinet || cabinetId === filters.cabinet) &&
-        (!filters.shelf || shelfId === filters.shelf) &&
-        (!author || (book.authors || []).some((item) => item.toLowerCase().includes(author))) &&
-        (!tag || (book.tags || []).some((item) => item.toLowerCase().includes(tag))) &&
-        (!year || String(book.publishedYear || '').includes(year))
-      );
-    })
-    .sort((left, right) => {
-      const direction = sort.direction === 'asc' ? 1 : -1;
-      const a = sortValue(left.book);
-      const b = sortValue(right.book);
-      return String(a).localeCompare(String(b), 'ru', { numeric: true, sensitivity: 'base' }) * direction;
+/* ---------- Модальное окно ---------- */
+
+function showModal(type, config) {
+  modal = { isOpen: true, type, ...config };
+  renderModal();
+}
+
+function closeModal() {
+  modal.isOpen = false;
+  if (modal.onClose) modal.onClose();
+  document.querySelector('.modal-overlay')?.remove();
+}
+
+function renderModal() {
+  document.querySelector('.modal-overlay')?.remove();
+  if (!modal.isOpen) return;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) closeModal();
+  });
+
+  const modalEl = document.createElement('div');
+  modalEl.className = 'modal';
+
+  if (modal.type === 'confirm') {
+    modalEl.innerHTML = `
+      <button class="close-btn" data-close>×</button>
+      <h2>${modal.title}</h2>
+      <p style="margin-bottom:20px;color:var(--text-secondary);">${modal.message || ''}</p>
+      <div class="modal-actions">
+        <button class="btn-secondary" data-close>Отмена</button>
+        <button class="btn-danger" data-confirm>Удалить</button>
+      </div>
+    `;
+  } else if (modal.type === 'edit' || modal.type === 'add-book-isbn') {
+    modalEl.innerHTML = `
+      <button class="close-btn" data-close>×</button>
+      <h2>${modal.title}</h2>
+      <form data-form>
+        ${modal.fields?.map(f => `
+          <label for="field-${f.key}">${f.label}${f.required ? ' *' : ''}</label>
+          ${f.type === 'textarea' ? `
+            <textarea 
+              id="field-${f.key}" 
+              name="field-${f.key}"
+              placeholder="${f.placeholder || ''}" 
+              ${f.required ? 'required' : ''}
+            >${f.value || ''}</textarea>
+          ` : `
+            <input 
+              id="field-${f.key}" 
+              name="field-${f.key}"
+              type="${f.type || 'text'}" 
+              placeholder="${f.placeholder || ''}" 
+              value="${f.value || ''}" 
+              ${f.required ? 'required' : ''}
+            />
+          `}
+        `).join('')}
+        ${modal.type === 'add-book-isbn' ? `
+          <div style="margin-top:8px;padding:12px;background:var(--bg-primary);border-radius:8px;font-size:13px;color:var(--text-secondary);">
+            💡 Если книга не будет найдена, вы сможете ввести данные вручную.
+          </div>
+        ` : ''}
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" data-close>Отмена</button>
+          <button type="submit" class="btn-primary">Сохранить</button>
+        </div>
+      </form>
+    `;
+    modalEl.querySelector('form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const formData = new FormData(e.target);
+      const data = {};
+      modal.fields.forEach(f => {
+        data[f.key] = formData.get(`field-${f.key}`) || '';
+      });
+      if (modal.onSave) {
+        try {
+          const result = await modal.onSave(data);
+          if (result !== false) closeModal();
+        } catch (err) {
+          showToast('Ошибка: ' + err.message, 'error');
+        }
+      }
     });
+  } else if (modal.type === 'book-details') {
+    const book = modal.book;
+    modalEl.innerHTML = `
+      <button class="close-btn" data-close>×</button>
+      <h2>${esc(book.title)}</h2>
+      <div style="margin:16px 0;">
+        ${book.author ? `<p><strong>Автор:</strong> ${esc(book.author)}</p>` : ''}
+        ${book.isbn ? `<p><strong>ISBN:</strong> ${esc(book.isbn)}</p>` : ''}
+        ${book.description ? `<p><strong>Описание:</strong></p><p style="color:var(--text-secondary);">${esc(book.description)}</p>` : ''}
+        <p style="color:var(--text-secondary);font-size:13px;margin-top:12px;">Добавлена: ${formatDate(book.createdAt)}</p>
+        ${book.updatedAt !== book.createdAt ? `<p style="color:var(--text-secondary);font-size:13px;">Обновлена: ${formatDate(book.updatedAt)}</p>` : ''}
+      </div>
+      <div class="modal-actions">
+        <button class="btn-secondary" data-close>Закрыть</button>
+        <button class="btn-primary" data-action="edit-book" data-id="${book.id}">✏️ Редактировать</button>
+      </div>
+    `;
+  } else {
+    modalEl.innerHTML = `
+      <button class="close-btn" data-close>×</button>
+      <h2>${modal.title || 'Ошибка'}</h2>
+      <p style="color:var(--text-secondary);">${modal.message || ''}</p>
+      <div class="modal-actions">
+        <button class="btn-primary" data-close>OK</button>
+      </div>
+    `;
+  }
+
+  overlay.appendChild(modalEl);
+  document.body.appendChild(overlay);
+
+  modalEl.querySelectorAll('[data-close]').forEach(el => {
+    el.addEventListener('click', closeModal);
+  });
+
+  modalEl.querySelector('[data-confirm]')?.addEventListener('click', () => {
+    if (modal.onConfirm) {
+      modal.onConfirm();
+      closeModal();
+    }
+  });
+
+  modalEl.querySelector('[data-action="edit-book"]')?.addEventListener('click', () => {
+    closeModal();
+  });
+
+  setTimeout(() => {
+    modalEl.querySelector('input:not([type="hidden"]), textarea')?.focus();
+  }, 100);
 }
 
-function sortValue(book) {
-  if (sort.key === 'author') return book.authors?.[0] || '';
-  if (sort.key === 'publishedYear') return book.publishedYear || 0;
-  if (sort.key === 'createdAt') return Date.parse(book.createdAt || 0);
-  return book.title || '';
+/* ---------- Toast ---------- */
+
+function showToast(message, type = 'info') {
+  document.querySelector('.toast')?.remove();
+  const toast = document.createElement('div');
+  toast.className = 'toast';
+  toast.style.cssText = `
+    background: ${type === 'success' ? 'var(--success)' : type === 'error' ? 'var(--danger)' : 'var(--text-primary)'};
+  `;
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateX(-50%) translateY(20px)';
+    toast.style.transition = '0.3s ease-out';
+    setTimeout(() => toast.remove(), 300);
+  }, 3000);
 }
+
+/* ---------- Рендеринг ---------- */
 
 function render() {
-  const library = activeLibrary();
-  if (!selectedCabinetId || !library.cabinets.some((cabinet) => cabinet.id === selectedCabinetId)) {
-    selectedCabinetId = library.cabinets[0]?.id || '';
-  }
-  const books = getFilteredBooks();
-  const shelves = library.cabinets.flatMap((cabinet) => cabinet.shelves.map((shelf) => ({ ...shelf, cabinetName: cabinet.name })));
-
-  const showShelves = currentView === 'shelves' || currentView === 'books';
-  const showBooks = currentView === 'books';
-
   app.innerHTML = `
     <main>
-      <header class="hero">
-        <div>
-          <p class="eyebrow">Минимодель</p>
-          <h1>Домашняя библиотека</h1>
-          <p>Локальное приложение для нескольких библиотек, шкафов, полок, сканирования ISBN, фильтрации и сортировки книг.</p>
+      <div class="topbar">
+        ${ui.step !== 'libraries' ? `<button class="back-btn" data-action="back">← Назад</button>` : ''}
+        <h1>${title()}</h1>
+        <div class="topbar-actions">
+          ${renderContextActions()}
         </div>
-        <div class="hero-stats">
-          <span>${library.cabinets.length} шкафов</span>
-          <span>${library.cabinets.reduce((sum, cabinet) => sum + cabinet.shelves.length, 0)} полок</span>
-          <span>${allBooks(library).length} книг</span>
-        </div>
-      </header>
-
-      <section class="panel flow-menu">
-        <div class="flow-steps">
-          <article class="flow-step">
-            <span class="flow-icon" aria-hidden="true">🏛️</span>
-            <div><p class="eyebrow">Шаг 1</p><h3>Библиотеки</h3><small>Сначала выберите библиотеку</small></div>
-          </article>
-          <article class="flow-step">
-            <span class="flow-icon" aria-hidden="true">🗄️</span>
-            <div><p class="eyebrow">Шаг 2</p><h3>Стеллажи</h3><small>Затем выберите шкаф и полку</small></div>
-          </article>
-          <article class="flow-step">
-            <span class="flow-icon" aria-hidden="true">📚</span>
-            <div><p class="eyebrow">Шаг 3</p><h3>Книги</h3><small>Потом добавляйте и фильтруйте книги</small></div>
-          </article>
-        </div>
-      </section>
-
-      <section class="panel">
-        <div class="section-heading">
-          <div><p class="eyebrow">Коллекции</p><h2>Библиотеки</h2></div>
-          <div class="inline-actions">
-            <button class="button primary" data-action="library-add">+ Библиотека</button>
-            ${currentView !== 'libraries' ? '<button class="button secondary" data-action="view-libraries">К библиотекам</button>' : ''}
-          </div>
-        </div>
-        <div class="library-list">
-          ${state.libraries
-            .map(
-              (item) => `
-              <article class="library-pill ${item.id === state.activeLibraryId ? 'active' : ''}">
-                <button data-action="library-select" data-id="${item.id}"><strong>${escapeHtml(item.name)}</strong><span>${item.cabinets.length} шкаф.</span></button>
-                <div class="inline-actions">
-                  <button class="ghost" data-action="library-rename" data-id="${item.id}">✎</button>
-                  <button class="ghost danger" data-action="library-delete" data-id="${item.id}">×</button>
-                </div>
-              </article>`,
-            )
-            .join('')}
-        </div>
-      </section>
-
-      <div class="layout">
-        ${showShelves ? `
-        <section class="panel">
-          <div class="section-heading">
-            <div><p class="eyebrow">Пространство</p><h2>Стеллажи (шкафы и полки)</h2></div>
-            <div class="inline-actions">
-              <button class="button primary" data-action="cabinet-add">+ Шкаф</button>
-              ${currentView === 'books' ? '<button class="button secondary" data-action="view-shelves">К стеллажам</button>' : '<button class="button secondary" data-action="view-books">К книгам</button>'}
-            </div>
-          </div>
-          <div class="cabinet-grid">
-            ${library.cabinets
-              .map(
-                (cabinet) => `
-                <article class="cabinet-card ${cabinet.id === selectedCabinetId ? 'active' : ''}">
-                  <button class="card-select" data-action="cabinet-select" data-id="${cabinet.id}">
-                    <span class="card-title">${escapeHtml(cabinet.name)}</span>
-                    <span class="muted">${escapeHtml(cabinet.location || 'Место не указано')}</span>
-                    <span class="badge-row"><span>${cabinet.shelves.length} полок</span><span>${countBooks(cabinet)} книг</span></span>
-                  </button>
-                  <div class="card-actions">
-                    <button class="ghost" data-action="cabinet-edit" data-id="${cabinet.id}">Изменить</button>
-                    <button class="ghost danger" data-action="cabinet-delete" data-id="${cabinet.id}">Удалить</button>
-                  </div>
-                  <div class="shelf-list">
-                    ${[...cabinet.shelves]
-                      .sort((a, b) => a.order - b.order)
-                      .map(
-                        (shelf) => `
-                        <div class="shelf-row">
-                          <button data-action="cabinet-select" data-id="${cabinet.id}"><span>${escapeHtml(shelf.name)}</span><small>${shelf.books.length} книг</small></button>
-                          <button class="ghost" data-action="shelf-edit" data-cabinet="${cabinet.id}" data-id="${shelf.id}">✎</button>
-                          <button class="ghost danger" data-action="shelf-delete" data-cabinet="${cabinet.id}" data-id="${shelf.id}">×</button>
-                        </div>`,
-                      )
-                      .join('')}
-                    <button class="add-shelf" data-action="shelf-add" data-id="${cabinet.id}">+ Добавить полку</button>
-                  </div>
-                </article>`,
-              )
-              .join('')}
-          </div>
-        </section>
-        ` : ''}
-
-        ${showBooks ? `
-        <section class="panel books-panel">
-          <div class="section-heading">
-            <div><p class="eyebrow">Каталог</p><h2>Книги</h2></div>
-            <button class="button primary" data-action="book-add">+ Книга</button>
-          </div>
-          ${renderScanner()}
-          ${editingBook ? renderBookForm() : ''}
-          <section class="filters">
-            <input data-filter="query" value="${escapeHtml(filters.query)}" placeholder="Поиск: название, автор, ISBN, тег" />
-            <select data-filter="cabinet"><option value="">Все шкафы</option>${library.cabinets.map((cabinet) => `<option value="${cabinet.id}" ${filters.cabinet === cabinet.id ? 'selected' : ''}>${escapeHtml(cabinet.name)}</option>`).join('')}</select>
-            <select data-filter="shelf"><option value="">Все полки</option>${shelves.map((shelf) => `<option value="${shelf.id}" ${filters.shelf === shelf.id ? 'selected' : ''}>${escapeHtml(shelf.cabinetName)} / ${escapeHtml(shelf.name)}</option>`).join('')}</select>
-            <input data-filter="author" value="${escapeHtml(filters.author)}" placeholder="Автор" />
-            <input data-filter="tag" value="${escapeHtml(filters.tag)}" placeholder="Тег" />
-            <input data-filter="year" value="${escapeHtml(filters.year)}" placeholder="Год" />
-            <select data-sort="key">
-              <option value="title" ${sort.key === 'title' ? 'selected' : ''}>Сортировать: название</option>
-              <option value="author" ${sort.key === 'author' ? 'selected' : ''}>Сортировать: автор</option>
-              <option value="publishedYear" ${sort.key === 'publishedYear' ? 'selected' : ''}>Сортировать: год</option>
-              <option value="createdAt" ${sort.key === 'createdAt' ? 'selected' : ''}>Сортировать: дата добавления</option>
-            </select>
-            <select data-sort="direction"><option value="asc" ${sort.direction === 'asc' ? 'selected' : ''}>По возрастанию</option><option value="desc" ${sort.direction === 'desc' ? 'selected' : ''}>По убыванию</option></select>
-          </section>
-          <div class="book-list">${books.length ? books.map(renderBook).join('') : '<div class="empty-state">Книг пока нет или они скрыты фильтрами. Добавьте первую книгу.</div>'}</div>
-        </section>
-        ` : ''}
       </div>
-    </main>`;
+      ${view()}
+    </main>
+  `;
 }
 
-function renderScanner() {
-  const canScan = 'BarcodeDetector' in window && navigator.mediaDevices?.getUserMedia;
-  return `
-    <section class="scanner-box">
-      <div class="section-heading compact">
-        <div><p class="eyebrow">Сканирование</p><h3>Добавить книгу по штрих-коду</h3></div>
-        <button class="button secondary" data-action="scan-toggle">${scannerStream ? 'Остановить' : 'Сканировать'}</button>
-      </div>
-      <div class="scanner-frame">
-        <video class="scanner-video" muted playsinline autoplay></video>
-        <div class="scanner-target" aria-hidden="true"></div>
-      </div>
-      <p class="muted" data-scanner-status>${escapeHtml(scannerStatus)}</p>
-      ${canScan ? '<p class="scanner-hint">На Android используйте Chrome/системный WebView и держите штрих-код ISBN внутри рамки.</p>' : '<p class="scanner-hint warning">Автосканирование недоступно в этом браузере. Для Android установите PWA или откройте в Chrome; ISBN можно ввести вручную.</p>'}
-      <div class="manual-isbn">
-        <input data-manual-isbn inputmode="numeric" autocomplete="off" value="${escapeHtml(scannedIsbn)}" placeholder="Введите ISBN или EAN-13 вручную" />
-        <button class="button primary" data-action="isbn-use">Использовать ISBN</button>
-      </div>
-    </section>`;
-}
-
-function renderBookForm() {
-  const found = editingBook.id ? findBook(editingBook.id) : null;
-  const book = found?.book || { title: '', authors: [], tags: [], isbn: scannedIsbn };
-  const location = found || { cabinetId: selectedCabinetId, shelfId: activeLibrary().cabinets.find((cabinet) => cabinet.id === selectedCabinetId)?.shelves[0]?.id || '' };
-  const library = activeLibrary();
-
-  return `
-    <form class="book-form" data-book-form>
-      ${
-        lookupVariants.length > 1
-          ? `<label>Найдено вариантов: ${lookupVariants.length}
-              <select data-action="lookup-variant">
-                ${lookupVariants
-                  .map(
-                    (item, index) =>
-                      `<option value="${index}">#${index + 1}: ${escapeHtml(item.title || 'Без названия')} — ${escapeHtml((item.authors || []).join(', ') || 'автор неизвестен')}</option>`,
-                  )
-                  .join('')}
-              </select>
-            </label>`
-          : ''
-      }
-      <div class="form-grid">
-        <label>Название книги *<input name="title" required value="${escapeHtml(book.title)}" placeholder="Например, Мастер и Маргарита" /></label>
-        <label>Авторы<input name="authors" value="${escapeHtml((book.authors || []).join(', '))}" placeholder="Через запятую" /></label>
-        <label>ISBN
-          <span class="isbn-lookup-row">
-            <input name="isbn" inputmode="numeric" value="${escapeHtml(book.isbn || '')}" placeholder="978..." />
-            <button class="button secondary" type="button" data-action="isbn-lookup">Загрузить</button>
-          </span>
-          <small class="lookup-status" data-lookup-status>Введите или отсканируйте ISBN, затем загрузите данные из LiveLib, ISBN Search и ISBNdb.</small>
-        </label>
-        <label>Издательство<input name="publisher" value="${escapeHtml(book.publisher || '')}" /></label>
-        <label>Год<input name="publishedYear" type="number" min="0" value="${escapeHtml(book.publishedYear || '')}" /></label>
-        <label>Теги<input name="tags" value="${escapeHtml((book.tags || []).join(', '))}" placeholder="фантастика, избранное" /></label>
-        <label>Обложка URL<input name="coverUrl" value="${escapeHtml(book.coverUrl || '')}" placeholder="https://..." /></label>
-        <label>Размеры<input name="dimensions" value="${escapeHtml(book.dimensions || '')}" placeholder="Например, 84x108/32 или 20 x 13 cm" /></label>
-        <label>Вес<input name="weight" value="${escapeHtml(book.weight || '')}" placeholder="Например, 450 г" /></label>
-        <label>Страниц<input name="pages" type="number" min="0" value="${escapeHtml(book.pages || '')}" /></label>
-        <label>Шкаф<select name="cabinetId">${library.cabinets.map((cabinet) => `<option value="${cabinet.id}" ${location.cabinetId === cabinet.id ? 'selected' : ''}>${escapeHtml(cabinet.name)}</option>`).join('')}</select></label>
-        <label>Полка<select name="shelfId">${library.cabinets.flatMap((cabinet) => cabinet.shelves.map((shelf) => `<option value="${shelf.id}" data-cabinet="${cabinet.id}" ${location.shelfId === shelf.id ? 'selected' : ''}>${escapeHtml(cabinet.name)} / ${escapeHtml(shelf.name)}</option>`)).join('')}</select></label>
-      </div>
-      <label>Описание<textarea name="description" rows="3">${escapeHtml(book.description || '')}</textarea></label>
-      <div class="form-actions"><button class="button primary">Сохранить книгу</button><button class="button secondary" type="button" data-action="book-cancel">Отмена</button></div>
-    </form>`;
-}
-
-function renderBook({ book, cabinetName, shelfName, cabinetId, shelfId }) {
-  const library = activeLibrary();
-  return `
-    <article class="book-card">
-      ${book.coverUrl ? `<img class="cover" src="${escapeHtml(book.coverUrl)}" alt="" />` : '<div class="cover placeholder">📚</div>'}
-      <div class="book-content">
-        <div class="book-main"><h3>${escapeHtml(book.title)}</h3><p>${escapeHtml((book.authors || []).join(', ') || 'Автор не указан')}</p><small>${escapeHtml(cabinetName)} · ${escapeHtml(shelfName)}${book.publishedYear ? ` · ${book.publishedYear}` : ''}${book.isbn ? ` · ISBN ${escapeHtml(book.isbn)}` : ''}${book.pages ? ` · ${escapeHtml(String(book.pages))} стр.` : ''}${book.dimensions ? ` · ${escapeHtml(book.dimensions)}` : ''}${book.weight ? ` · ${escapeHtml(book.weight)}` : ''}</small></div>
-        ${book.description ? `<p class="description">${escapeHtml(book.description)}</p>` : ''}
-        <div class="tag-row">${(book.tags || []).map((tag) => `<span>#${escapeHtml(tag)}</span>`).join('')}</div>
-        <div class="book-actions">
-          <select data-action="book-move" data-id="${book.id}">${library.cabinets.flatMap((cabinet) => cabinet.shelves.map((shelf) => `<option value="${cabinet.id}|${shelf.id}" ${cabinet.id === cabinetId && shelf.id === shelfId ? 'selected' : ''}>${escapeHtml(cabinet.name)} / ${escapeHtml(shelf.name)}</option>`)).join('')}</select>
-          <button class="ghost" data-action="book-edit" data-id="${book.id}">Изменить</button>
-          <button class="ghost danger" data-action="book-delete" data-id="${book.id}">Удалить</button>
-        </div>
-      </div>
-    </article>`;
-}
-
-app.addEventListener('click', async (event) => {
-  const button = event.target.closest('button');
-  if (!button) return;
-  const { action, id: itemId, cabinet } = button.dataset;
-  if (!action) return;
-
-  if (action === 'library-add') {
-    const name = prompt('Название новой библиотеки', 'Новая библиотека')?.trim();
-    if (!name) return;
-    const library = createLibrary(name);
-    state.libraries.push(library);
-    state.activeLibraryId = library.id;
-    filters = { query: '', cabinet: '', shelf: '', author: '', tag: '', year: '' };
-    persist();
-    render();
-  }
-  if (action === 'library-select') {
-    state.activeLibraryId = itemId;
-    currentView = 'shelves';
-    filters = { query: '', cabinet: '', shelf: '', author: '', tag: '', year: '' };
-    persist();
-    render();
-  }
-  if (action === 'view-libraries') {
-    currentView = 'libraries';
-    render();
-  }
-  if (action === 'view-shelves') {
-    currentView = 'shelves';
-    render();
-  }
-  if (action === 'view-books') {
-    currentView = 'books';
-    render();
-  }
-  if (action === 'library-rename') {
-    const library = state.libraries.find((item) => item.id === itemId);
-    const name = prompt('Новое название библиотеки', library?.name)?.trim();
-    if (!name) return;
-    library.name = name;
-    library.updatedAt = now();
-    persist();
-    render();
-  }
-  if (action === 'library-delete') {
-    if (state.libraries.length === 1) return alert('Нельзя удалить последнюю библиотеку.');
-    if (!confirm('Удалить библиотеку вместе со всеми шкафами и книгами?')) return;
-    state.libraries = state.libraries.filter((library) => library.id !== itemId);
-    state.activeLibraryId = state.libraries[0].id;
-    persist();
-    render();
-  }
-  if (action === 'cabinet-select') {
-    selectedCabinetId = itemId;
-    if (currentView === 'shelves') currentView = 'books';
-    render();
-  }
-  if (action === 'cabinet-add') {
-    const name = prompt('Название шкафа', 'Новый шкаф')?.trim();
-    if (!name) return;
-    const location = prompt('Где находится шкаф?', '')?.trim();
-    updateActive((library) => ({ ...library, cabinets: [...library.cabinets, { id: id('cabinet'), name, location, shelves: [createShelf(0)] }] }));
-  }
-  if (action === 'cabinet-edit') {
-    const current = activeLibrary().cabinets.find((item) => item.id === itemId);
-    const name = prompt('Название шкафа', current?.name)?.trim();
-    if (!name) return;
-    const location = prompt('Расположение шкафа', current?.location || '')?.trim();
-    updateActive((library) => ({ ...library, cabinets: library.cabinets.map((item) => (item.id === itemId ? { ...item, name, location } : item)) }));
-  }
-  if (action === 'cabinet-delete') {
-    if (activeLibrary().cabinets.length === 1) return alert('Нельзя удалить последний шкаф библиотеки.');
-    if (!confirm('Удалить шкаф вместе с полками и книгами?')) return;
-    updateActive((library) => ({ ...library, cabinets: library.cabinets.filter((item) => item.id !== itemId) }));
-  }
-  if (action === 'shelf-add') {
-    const cabinetData = activeLibrary().cabinets.find((item) => item.id === itemId);
-    const name = prompt('Название полки', `Полка ${(cabinetData?.shelves.length || 0) + 1}`)?.trim();
-    if (!name) return;
-    updateActive((library) => ({ ...library, cabinets: library.cabinets.map((item) => (item.id === itemId ? { ...item, shelves: [...item.shelves, createShelf(item.shelves.length, name)] } : item)) }));
-  }
-  if (action === 'shelf-edit') {
-    const shelf = activeLibrary().cabinets.find((item) => item.id === cabinet)?.shelves.find((item) => item.id === itemId);
-    const name = prompt('Название полки', shelf?.name)?.trim();
-    if (!name) return;
-    updateActive((library) => ({ ...library, cabinets: library.cabinets.map((item) => (item.id === cabinet ? { ...item, shelves: item.shelves.map((shelfItem) => (shelfItem.id === itemId ? { ...shelfItem, name } : shelfItem)) } : item)) }));
-  }
-  if (action === 'shelf-delete') {
-    const cabinetData = activeLibrary().cabinets.find((item) => item.id === cabinet);
-    if (!cabinetData || cabinetData.shelves.length === 1) return alert('Нельзя удалить последнюю полку шкафа.');
-    if (!confirm('Удалить полку вместе с книгами?')) return;
-    updateActive((library) => ({ ...library, cabinets: library.cabinets.map((item) => (item.id === cabinet ? { ...item, shelves: item.shelves.filter((shelf) => shelf.id !== itemId) } : item)) }));
-  }
-  if (action === 'book-add') {
-    editingBook = { id: null };
-    scannedIsbn = '';
-    lookupVariants = [];
-    render();
-  }
-  if (action === 'book-cancel') {
-    editingBook = null;
-    scannedIsbn = '';
-    lookupVariants = [];
-    render();
-  }
-  if (action === 'book-edit') {
-    editingBook = { id: itemId };
-    render();
-  }
-  if (action === 'book-delete') {
-    if (!confirm('Удалить книгу?')) return;
-    updateActive((library) => removeBook(library, itemId));
-  }
-  if (action === 'isbn-use') {
-    const value = normalizeIsbnBarcode(app.querySelector('[data-manual-isbn]')?.value.trim());
-    if (!value) return alert('Введите корректный ISBN или EAN-13 штрих-код.');
-    stopScanner('ISBN перенесён в форму книги.');
-    scannedIsbn = value;
-    editingBook = { id: null };
-    render();
-    await lookupIntoCurrentBookForm(value);
-  }
-  if (action === 'isbn-lookup') {
-    const form = button.closest('[data-book-form]');
-    const value = normalizeIsbnBarcode(form?.elements.isbn?.value);
-    if (!value) return setLookupStatus('Введите корректный ISBN или EAN-13.', 'error');
-    form.elements.isbn.value = value;
-    await lookupIntoCurrentBookForm(value);
-  }
-  if (action === 'scan-toggle') {
-    if (scannerStream) {
-      stopScanner();
-    } else {
-      await startScanner();
+function renderContextActions() {
+  const actions = [];
+  const parent = getParentEntity();
+  if (parent) {
+    let type = '';
+    if (ui.step === 'rooms') type = 'library';
+    else if (ui.step === 'cabinets') type = 'room';
+    else if (ui.step === 'shelves') type = 'cabinet';
+    else if (ui.step === 'books') type = 'shelf';
+    if (type) {
+      actions.push(`
+        <button data-action="edit-parent" data-type="${type}">✏️</button>
+        <button class="danger" data-action="delete-parent" data-type="${type}">🗑️</button>
+      `);
     }
   }
-});
-
-app.addEventListener('change', (event) => {
-  const input = event.target;
-  if (input.dataset.filter) {
-    filters[input.dataset.filter] = input.value;
-    if (input.dataset.filter === 'cabinet') filters.shelf = '';
-    render();
+  if (ui.step === 'books') {
+    actions.push(`<button data-action="add-book-isbn" style="background:rgba(255,255,255,0.15);">📡 По ISBN</button>
+      <button data-action="add-book">➕ Книга</button>`);
   }
-  if (input.dataset.sort) {
-    sort[input.dataset.sort] = input.value;
-    render();
+  if (ui.step === 'shelves') {
+    actions.push(`<button data-action="add-shelf">➕ Полка</button>`);
   }
-  if (input.dataset.action === 'book-move') {
-    const [cabinetId, shelfId] = input.value.split('|');
-    updateActive((library) => moveBook(library, input.dataset.id, cabinetId, shelfId));
-  }
-  if (input.dataset.action === 'lookup-variant') {
-    applyLookupVariant(Number(input.value || 0));
-  }
-});
-
-app.addEventListener('input', (event) => {
-  const input = event.target;
-  if (input.dataset.filter) {
-    filters[input.dataset.filter] = input.value;
-    render();
-  }
-});
-
-app.addEventListener('submit', (event) => {
-  const form = event.target.closest('[data-book-form]');
-  if (!form) return;
-  event.preventDefault();
-  const data = Object.fromEntries(new FormData(form));
-  const book = {
-    id: editingBook?.id || id('book'),
-    title: data.title.trim(),
-    authors: list(data.authors || ''),
-    isbn: data.isbn.trim(),
-    publisher: data.publisher.trim(),
-    publishedYear: data.publishedYear ? Number(data.publishedYear) : '',
-    coverUrl: data.coverUrl.trim(),
-    description: data.description.trim(),
-    tags: list(data.tags || ''),
-    dimensions: String(data.dimensions || '').trim(),
-    weight: String(data.weight || '').trim(),
-    pages: data.pages ? Number(data.pages) : '',
-    createdAt: editingBook?.id ? findBook(editingBook.id)?.book.createdAt : now(),
-    updatedAt: now(),
-  };
-
-  updateActive((library) => {
-    const withoutCurrent = removeBook(library, book.id);
-    return {
-      ...withoutCurrent,
-      cabinets: withoutCurrent.cabinets.map((cabinet) =>
-        cabinet.id === data.cabinetId
-          ? { ...cabinet, shelves: cabinet.shelves.map((shelf) => (shelf.id === data.shelfId ? { ...shelf, books: [...shelf.books, book] } : shelf)) }
-          : cabinet,
-      ),
-    };
-  });
-  editingBook = null;
-  scannedIsbn = '';
-  lookupVariants = [];
-});
-
-async function startScanner() {
-  if (!window.isSecureContext) {
-    updateScannerStatus('Камера работает только на HTTPS или localhost. Для Android установите PWA с HTTPS-домена.');
-    return;
-  }
-  if (!('BarcodeDetector' in window)) {
-    updateScannerStatus('В этом браузере нет BarcodeDetector. Введите ISBN вручную или откройте приложение в Android Chrome.');
-    return;
-  }
-  try {
-    stopScanner('Запрашиваем доступ к камере...');
-    scannerStream = await navigator.mediaDevices.getUserMedia({
-      audio: false,
-      video: {
-        facingMode: { ideal: 'environment' },
-        width: { ideal: 1280 },
-        height: { ideal: 720 },
-      },
-    });
-    scannerTrack = scannerStream.getVideoTracks()[0] || null;
-    const video = app.querySelector('.scanner-video');
-    const button = app.querySelector('[data-action="scan-toggle"]');
-    if (button) button.textContent = 'Остановить';
-    video.srcObject = scannerStream;
-    await video.play();
-
-    const supportedFormats = BarcodeDetector.getSupportedFormats ? await BarcodeDetector.getSupportedFormats() : [];
-    const preferredFormats = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128'].filter((format) => supportedFormats.length === 0 || supportedFormats.includes(format));
-    const detector = new BarcodeDetector({ formats: preferredFormats });
-    updateScannerStatus('Наведите камеру на ISBN/EAN штрих-код книги.');
-
-    const tick = async () => {
-      if (!scannerStream) return;
-      try {
-        const codes = await detector.detect(video);
-        const isbn = normalizeIsbnBarcode(codes[0]?.rawValue);
-        if (isbn) {
-          scannedIsbn = isbn;
-          stopScanner(`Штрих-код найден: ${isbn}`);
-          editingBook = { id: null };
-          render();
-          await lookupIntoCurrentBookForm(isbn);
-          return;
-        }
-        updateScannerStatus('Сканируем... держите штрих-код ровно внутри рамки.');
-      } catch {
-        updateScannerStatus('Не удалось распознать кадр. Попробуйте улучшить освещение или ввести ISBN вручную.');
-      }
-      setTimeout(tick, 450);
-    };
-    tick();
-  } catch {
-    stopScanner('Не удалось открыть камеру. Проверьте разрешения Android/браузера или введите ISBN вручную.');
-  }
+  if (ui.step === 'rooms' && lib()) actions.push(`<button data-action="add-room">➕ Помещение</button>`);
+  if (ui.step === 'cabinets' && findRoom()) actions.push(`<button data-action="add-cabinet">➕ Шкаф</button>`);
+  return actions.join('');
 }
 
+function title() {
+  const map = {
+    libraries: 'Мои библиотеки',
+    rooms: 'Помещения',
+    cabinets: 'Шкафы',
+    shelves: 'Полки',
+    books: 'Книги'
+  };
+  return map[ui.step] || '';
+}
+
+function view() {
+  if (ui.step === 'libraries') return renderLibraries();
+  if (ui.step === 'rooms') return renderRooms();
+  if (ui.step === 'cabinets') return renderCabinets();
+  if (ui.step === 'shelves') return renderShelves();
+  if (ui.step === 'books') return renderBooks();
+  return '';
+}
+
+/* ---------- Представления ---------- */
+
+function renderLibraries() {
+  if (!state.libraries.length) {
+    return `
+      <button class="add-btn" data-action="add-library">📚 Создать первую библиотеку</button>
+      <div class="empty-state"><span class="emoji">📚</span><h3>Нет библиотек</h3><p>Начните с создания своей первой библиотеки</p></div>
+    `;
+  }
+  return `
+    <button class="add-btn" data-action="add-library">➕ Новая библиотека</button>
+    <div class="grid">
+      ${state.libraries.map(l => `
+        <div class="card">
+          <button data-action="open-library" data-id="${l.id}">
+            <span class="icon">🏛</span>
+            <span class="name">${esc(l.name)}</span>
+            <span class="badge">${l.rooms?.length || 0} помещений</span>
+          </button>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function renderRooms() {
+  const library = lib();
+  if (!library) return `<div class="empty-state"><p>Библиотека не выбрана</p></div>`;
+  const rooms = library.rooms || [];
+  if (!rooms.length) {
+    return `
+      <button class="add-btn" data-action="add-room">➕ Создать первое помещение</button>
+      <div class="empty-state"><span class="emoji">🏚️</span><h3>Нет помещений</h3><p>Добавьте помещение в библиотеку «${esc(library.name)}»</p></div>
+    `;
+  }
+  return `
+    <button class="add-btn" data-action="add-room">➕ Новое помещение</button>
+    <div class="grid">
+      ${rooms.map(r => `
+        <div class="card">
+          <button data-action="open-room" data-id="${r.id}">
+            <span class="icon">🚪</span>
+            <span class="name">${esc(r.name)}</span>
+            <span class="badge">${r.cabinets?.length || 0} шкафов</span>
+          </button>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function renderCabinets() {
+  const room = findRoom();
+  if (!room) return `<div class="empty-state"><p>Помещение не выбрано</p></div>`;
+  const cabinets = room.cabinets || [];
+  if (!cabinets.length) {
+    return `
+      <button class="add-btn" data-action="add-cabinet">➕ Создать первый шкаф</button>
+      <div class="empty-state"><span class="emoji">🗄️</span><h3>Нет шкафов</h3><p>Добавьте шкаф в помещение «${esc(room.name)}»</p></div>
+    `;
+  }
+  return `
+    <button class="add-btn" data-action="add-cabinet">➕ Новый шкаф</button>
+    <div class="grid">
+      ${cabinets.map(c => `
+        <div class="card">
+          <button data-action="open-cabinet" data-id="${c.id}">
+            <span class="icon">🗄</span>
+            <span class="name">${esc(c.name)}</span>
+            <span class="badge">${c.shelves?.length || 0} полок</span>
+          </button>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function renderShelves() {
+  const cabinet = findCabinet();
+  if (!cabinet) return `<div class="empty-state"><p>Шкаф не выбран</p></div>`;
+  const shelves = cabinet.shelves || [];
+
+  // Если полок нет — показываем кнопку добавления
+  if (!shelves.length) {
+    return `
+      <button class="add-btn" data-action="add-shelf">➕ Создать первую полку</button>
+      <div class="empty-state"><span class="emoji">📦</span><h3>Нет полок</h3><p>Добавьте полку в шкаф «${esc(cabinet.name)}»</p></div>
+    `;
+  }
+
+  // Рендерим каждую полку как книжную полку
+  return `
+    <button class="add-btn" data-action="add-shelf">➕ Новая полка</button>
+    ${shelves.map(s => {
+      const books = s.books || [];
+      return `
+        <div class="shelf-container">
+          <div class="shelf-header">
+            <div>
+              <span class="shelf-name">📚 ${esc(s.name)}</span>
+              <span class="shelf-meta">
+                <span>📏 ${s.lengthCm} см</span>
+                <span>📐 ${s.heightCm}×${s.depthCm} см</span>
+                <span>📖 ${books.length} книг</span>
+              </span>
+            </div>
+            <div class="shelf-actions">
+              <button data-action="open-shelf" data-id="${s.id}">📂 Открыть</button>
+              <button data-action="edit-shelf" data-id="${s.id}">✏️</button>
+              <button class="danger" data-action="delete-shelf" data-id="${s.id}">🗑️</button>
+            </div>
+          </div>
+          <div class="shelf-books">
+            ${books.length ? books.map(b => `
+              <div class="book-tile" data-book-id="${b.id}">
+                <div class="book-title">${esc(b.title)}</div>
+                ${b.author ? `<div class="book-author">${esc(b.author)}</div>` : ''}
+                ${b.isbn ? `<div class="book-isbn">${esc(b.isbn)}</div>` : ''}
+                <div class="book-actions">
+                  <button data-action="edit-book" data-id="${b.id}">✏️</button>
+                  <button class="danger" data-action="delete-book" data-id="${b.id}">🗑️</button>
+                </div>
+              </div>
+            `).join('') : `<div class="empty-shelf">📭 На этой полке пока нет книг</div>`}
+          </div>
+        </div>
+      `;
+    }).join('')}
+  `;
+}
+
+function renderBooks() {
+  const shelf = findShelf();
+  if (!shelf) return `<div class="empty-state"><p>Полка не выбрана</p></div>`;
+  const books = shelf.books || [];
+  return `
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px;">
+      <button class="add-btn" style="flex:1;min-width:150px;" data-action="add-book">➕ Новая книга</button>
+      <button class="add-btn secondary" style="flex:1;min-width:150px;" data-action="add-book-isbn">📡 По ISBN</button>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:12px;padding:8px 0;">
+      ${books.map(b => `
+        <div class="book-tile" data-book-id="${b.id}" style="background:var(--bg-primary);border-radius:8px;padding:12px 16px;cursor:pointer;transition:var(--transition);border-left:4px solid var(--accent);width:160px;min-height:80px;display:flex;flex-direction:column;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.04);">
+          <div style="font-weight:600;font-size:14px;line-height:1.3;word-break:break-word;">${esc(b.title)}</div>
+          ${b.author ? `<div style="font-size:12px;color:var(--text-secondary);margin-top:4px;">${esc(b.author)}</div>` : ''}
+          ${b.isbn ? `<div style="font-size:10px;color:var(--text-secondary);margin-top:2px;opacity:0.6;">${esc(b.isbn)}</div>` : ''}
+          <div style="display:flex;gap:6px;margin-top:8px;">
+            <button data-action="edit-book" data-id="${b.id}" style="padding:2px 8px;font-size:11px;border:none;border-radius:4px;background:var(--bg-card);cursor:pointer;">✏️</button>
+            <button data-action="delete-book" data-id="${b.id}" style="padding:2px 8px;font-size:11px;border:none;border-radius:4px;background:var(--danger);color:white;cursor:pointer;">🗑️</button>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+    ${!books.length ? `<div class="empty-state" style="padding:40px 20px;"><span class="emoji">📖</span><h3>Нет книг</h3><p>Добавьте книгу на полку «${esc(shelf.name)}»</p></div>` : ''}
+  `;
+}
+
+/* ---------- Обработчики событий ---------- */
+
+app.addEventListener('click', async e => {
+  const tile = e.target.closest('.book-tile');
+  if (tile && !e.target.closest('button')) {
+    const bookId = tile.dataset.bookId;
+    // Определяем, на каком уровне мы находимся: на странице полок или книг
+    let shelf;
+    if (ui.step === 'shelves') {
+      // Ищем полку, которой принадлежит книга
+      const cabinet = findCabinet();
+      if (cabinet) {
+        for (const s of cabinet.shelves) {
+          const book = s.books.find(b => b.id === bookId);
+          if (book) {
+            shelf = s;
+            break;
+          }
+        }
+      }
+    } else if (ui.step === 'books') {
+      shelf = findShelf();
+    }
+    if (shelf) {
+      const book = shelf.books.find(b => b.id === bookId);
+      if (book) showModal('book-details', { book });
+    }
+    return;
+  }
+
+  const b = e.target.closest('button');
+  if (!b) return;
+
+  const { action, id, type } = b.dataset;
+
+  switch (action) {
+    case 'back':
+      if (ui.step === 'books') return go('shelves');
+      if (ui.step === 'shelves') return go('cabinets');
+      if (ui.step === 'cabinets') return go('rooms');
+      if (ui.step === 'rooms') return go('libraries');
+      break;
+
+    case 'add-library': addLibrary(); break;
+    case 'add-room': addRoom(); break;
+    case 'add-cabinet': addCabinet(); break;
+    case 'add-shelf': addShelf(); break;
+    case 'add-book': addBook(); break;
+    case 'add-book-isbn': addBookByIsbn(); break;
+
+    case 'open-library':
+      state.activeLibraryId = id;
+      persist();
+      go('rooms');
+      break;
+    case 'open-room': go('cabinets', { roomId: id }); break;
+    case 'open-cabinet': go('shelves', { cabinetId: id }); break;
+    case 'open-shelf': go('books', { shelfId: id }); break;
+
+    case 'edit-parent': {
+      const parent = getParentEntity();
+      if (parent) editEntity(parent, type || 'library');
+      break;
+    }
+    case 'delete-parent': {
+      const parent = getParentEntity();
+      if (parent) deleteEntityWithConfirm(parent, type || 'library');
+      break;
+    }
+
+    case 'edit-shelf': {
+      const cabinet = findCabinet();
+      if (cabinet) {
+        const shelf = cabinet.shelves.find(s => s.id === id);
+        if (shelf) editEntity(shelf, 'shelf');
+      }
+      break;
+    }
+    case 'edit-book': {
+      // Ищем книгу в зависимости от текущего шага
+      let shelf;
+      if (ui.step === 'shelves') {
+        const cabinet = findCabinet();
+        if (cabinet) {
+          for (const s of cabinet.shelves) {
+            const book = s.books.find(b => b.id === id);
+            if (book) { shelf = s; break; }
+          }
+        }
+      } else if (ui.step === 'books') {
+        shelf = findShelf();
+      }
+      if (shelf) {
+        const book = shelf.books.find(b => b.id === id);
+        if (book) {
+          closeModal();
+          editEntity(book, 'book');
+        }
+      }
+      break;
+    }
+
+    case 'delete-shelf': {
+      const cabinet = findCabinet();
+      if (cabinet) {
+        const shelf = cabinet.shelves.find(s => s.id === id);
+        if (shelf) deleteEntityWithConfirm(shelf, 'shelf');
+      }
+      break;
+    }
+    case 'delete-book': {
+      let shelf;
+      if (ui.step === 'shelves') {
+        const cabinet = findCabinet();
+        if (cabinet) {
+          for (const s of cabinet.shelves) {
+            const book = s.books.find(b => b.id === id);
+            if (book) { shelf = s; break; }
+          }
+        }
+      } else if (ui.step === 'books') {
+        shelf = findShelf();
+      }
+      if (shelf) {
+        const book = shelf.books.find(b => b.id === id);
+        if (book) deleteEntityWithConfirm(book, 'book');
+      }
+      break;
+    }
+
+    default: break;
+  }
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeModal();
+});
+
+// Инициализация
 render();
