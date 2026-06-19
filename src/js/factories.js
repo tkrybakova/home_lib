@@ -57,8 +57,6 @@ export function createLibrary(name = 'Библиотека') {
   };
 }
 
-// Миграция старых данных
-import { createShelf as _createShelf } from './factories.js'; // циклическая зависимость? используем уже импортированную
 export function migrateState(state) {
   console.log('🔄 Миграция началась');
   if (!Array.isArray(state.libraries)) state.libraries = [];
