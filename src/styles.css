@@ -156,7 +156,7 @@ main > :not(.topbar) {
   box-shadow: none;
 }
 
-/* ---------- Сетка карточек ---------- */
+/* ---------- Сетка карточек (для библиотек, помещений, шкафов) ---------- */
 .grid {
   display: -webkit-box;
   display: flex;
@@ -222,149 +222,133 @@ main > :not(.topbar) {
   flex-shrink: 0;
 }
 
-/* ---------- Стили для полок (шкаф с книгами) ---------- */
-.shelf-container {
+/* ---------- Стили для книжного шкафа (полки) ---------- */
+.shelf {
+  position: relative;
+  border-bottom: 6px solid var(--text-primary);
+  padding-bottom: 4px;
   margin-bottom: 24px;
-  background: var(--bg-card);
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-  overflow: hidden;
-  border-left: 4px solid var(--accent);
 }
 
-.shelf-header {
-  padding: 12px 16px;
-  background: var(--bg-primary);
+/* Контейнер для книг на полке */
+.books-container {
   display: -webkit-box;
   display: flex;
+  align-items: flex-end;
+  flex-wrap: nowrap;
+  min-height: 280px;
+  padding: 10px 5px 0 5px;
+  gap: 3px;
+  position: relative;
+  overflow-x: auto;
+  cursor: pointer;
+}
+
+/* Пустая полка */
+.books-container:empty {
+  min-height: 280px;
+  display: -webkit-box;
+  display: flex;
+  justify-content: center;
   align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 8px;
-  border-bottom: 1px solid var(--border);
-}
-
-.shelf-header .shelf-name {
-  font-weight: 600;
-  font-size: 16px;
-}
-
-.shelf-header .shelf-meta {
-  font-size: 13px;
+  border: 2px dashed var(--border);
+  border-radius: 4px;
   color: var(--text-secondary);
-  display: -webkit-box;
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
+  font-style: italic;
+  font-size: 18px;
 }
 
-.shelf-header .shelf-actions {
+.books-container:empty::after {
+  content: 'Нажмите, чтобы добавить книгу';
+}
+
+/* Кнопки управления полкой (справа сверху) */
+.shelf-actions {
+  position: absolute;
+  top: -10px;
+  right: 0;
   display: -webkit-box;
   display: flex;
   gap: 6px;
+  z-index: 10;
 }
 
-.shelf-header .shelf-actions button {
-  padding: 4px 12px;
-  font-size: 12px;
-  border-radius: 6px;
-  border: none;
-  cursor: pointer;
-  transition: var(--transition);
+.shelf-actions button {
   background: var(--bg-card);
+  border: 2px solid var(--text-primary);
+  border-radius: 4px;
+  width: 28px;
+  height: 28px;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
   color: var(--text-primary);
-}
-
-.shelf-header .shelf-actions button:hover {
-  background: var(--accent);
-  color: var(--text-light);
-}
-
-.shelf-header .shelf-actions button.danger:hover {
-  background: var(--danger);
-}
-
-.shelf-books {
+  transition: all 0.2s;
   display: -webkit-box;
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 12px 16px;
-  min-height: 60px;
-  background: var(--bg-card);
+  align-items: center;
+  justify-content: center;
+  font-family: sans-serif;
 }
 
-.shelf-books .book-tile {
+.shelf-actions button:hover {
   background: var(--bg-primary);
-  border-radius: 6px;
-  padding: 8px 12px;
+  transform: scale(1.1);
+}
+
+.shelf-actions .btn-remove {
+  color: var(--danger);
+}
+
+.shelf-actions .btn-add-book {
+  color: var(--accent);
+}
+
+/* Стили отдельных книг */
+.book {
+  border: 2px solid var(--text-primary);
+  background: var(--bg-card);
+  flex-shrink: 0;
+  position: relative;
+  transition: transform 0.2s, box-shadow 0.2s;
   cursor: pointer;
-  transition: var(--transition);
-  border-left: 3px solid var(--accent);
+}
+
+.book:hover {
+  box-shadow: var(--shadow-lg);
+  z-index: 2;
+}
+
+.book.upright {
+  /* высота и ширина задаются инлайн */
+}
+
+.book.upright.lean-left {
+  transform: rotate(-12deg);
+  transform-origin: bottom center;
+  margin-bottom: -2px;
+}
+
+.book.upright.lean-right {
+  transform: rotate(12deg);
+  transform-origin: bottom center;
+  margin-bottom: -2px;
+}
+
+/* Горизонтальные стопки книг */
+.horizontal-stack {
   display: -webkit-box;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.04);
-  min-width: 100px;
-  max-width: 160px;
-  flex: 0 1 auto;
+  justify-content: flex-end;
+  align-self: flex-end;
+  flex-shrink: 0;
+  margin-bottom: -1px;
 }
 
-.shelf-books .book-tile:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-lg);
-  background: var(--bg-card);
-}
-
-.shelf-books .book-tile .book-title {
-  font-weight: 500;
-  font-size: 13px;
-  line-height: 1.2;
-  word-break: break-word;
-}
-
-.shelf-books .book-tile .book-author {
-  font-size: 11px;
-  color: var(--text-secondary);
-  margin-top: 2px;
-}
-
-.shelf-books .book-tile .book-isbn {
-  font-size: 9px;
-  color: var(--text-secondary);
-  opacity: 0.5;
-  margin-top: 2px;
-}
-
-.shelf-books .book-tile .book-actions {
-  display: -webkit-box;
-  display: flex;
-  gap: 4px;
-  margin-top: 6px;
-}
-
-.shelf-books .book-tile .book-actions button {
-  padding: 0 6px;
-  font-size: 10px;
-  border: none;
-  border-radius: 3px;
-  cursor: pointer;
-  background: var(--bg-card);
-  color: var(--text-primary);
-}
-
-.shelf-books .book-tile .book-actions button.danger {
-  background: var(--danger);
-  color: white;
-}
-
-.shelf-books .empty-shelf {
+.book.horizontal {
   width: 100%;
-  text-align: center;
-  color: var(--text-secondary);
-  font-size: 14px;
-  padding: 16px 0;
+  /* высота задаётся инлайн */
 }
 
 /* ---------- Модальное окно ---------- */
@@ -562,18 +546,16 @@ main > :not(.topbar) {
     flex-direction: column;
   }
 
-  .shelf-header {
-    flex-direction: column;
-    align-items: stretch;
+  .books-container {
+    min-height: 200px;
   }
 
-  .shelf-header .shelf-actions {
-    justify-content: flex-end;
+  .books-container:empty {
+    min-height: 200px;
   }
 
-  .shelf-books .book-tile {
-    min-width: 80px;
-    max-width: 120px;
+  .book.upright {
+    height: 150px !important; /* Уменьшаем книги на телефонах */
   }
 }
 
@@ -593,12 +575,6 @@ main > :not(.topbar) {
 
   .topbar-actions {
     justify-content: center;
-  }
-
-  .shelf-books .book-tile {
-    min-width: 60px;
-    max-width: 100px;
-    padding: 6px 10px;
   }
 }
 
@@ -623,7 +599,7 @@ main > :not(.topbar) {
   }
 }
 
-.shelf-container {
+.shelf {
   animation: fadeIn 0.3s ease-out;
 }
 
