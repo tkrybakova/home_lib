@@ -1,4 +1,4 @@
-import { state, ui, lib, findRoom, findCabinet, findShelf, findShelfById, getParentEntity } from './state.js';
+import { state, ui, lib, findRoom, findCabinet, findShelf, getParentEntity } from './state.js';
 import { esc, formatDate } from './utils.js';
 import { showModal } from './modal.js';
 
@@ -207,6 +207,8 @@ function renderShelves() {
     html += `
       <div class="shelf" data-shelf-id="${shelf.id}">
         <div class="shelf-actions">
+          <button data-action="open-shelf" data-id="${shelf.id}">Открыть</button>
+          <button data-action="edit-shelf" data-id="${shelf.id}">✏️</button>
           <button class="btn-add-book" data-action="add-book-to-shelf" data-shelf-id="${shelf.id}">+</button>
           <button class="btn-remove" data-action="delete-shelf" data-id="${shelf.id}">×</button>
         </div>

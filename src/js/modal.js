@@ -139,8 +139,9 @@ export function renderModal() {
   });
 
   modalEl.querySelector('[data-action="edit-book"]')?.addEventListener('click', () => {
+    const book = modal.book;
     closeModal();
-    // Редактирование книги будет обработано в событиях
+    if (book) editEntity(book, 'book');
   });
 
   setTimeout(() => {
