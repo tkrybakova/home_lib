@@ -1,3 +1,4 @@
+//backend/sources/serp.mjs
 // Импорт утилит для работы с сетью и нормализации данных
 import { fetchJson } from '../utils/fetchJson.mjs';
 import { normalizeIsbn } from '../utils/isbn.mjs';
@@ -8,17 +9,12 @@ const SOURCE = 'serp';
 // Список доверенных книжных доменов для фильтрации результатов
 // Используется для исключения мусорных сайтов из результатов поиска
 const BOOK_DOMAINS = [
-  'ozon.ru',          // Крупный маркетплейс
   'livelib.ru',       // Социальная сеть книголюбов
   'litres.ru',        // Крупнейший книжный сервис
-  'book24.ru',        // Книжный магазин
-  'labirint.ru',      // Книжный магазин
   'chitai-gorod.ru',  // Книжный магазин
-  'alpina.ru',        // Издательство Альпина
   'my-shop.ru',       // Книжный магазин
   'ast.ru',           // Издательство АСТ
   'eksmo.ru',         // Издательство Эксмо
-  'respublica.ru',    // Книжный магазин
 ];
 
 /**

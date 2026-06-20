@@ -1,6 +1,6 @@
+// backend/api/resolver.mjs
 // Импорт компонентов для работы с кэшем и источниками данных
 import { BookCache } from '../cache/sqliteCache.mjs';
-import { fetchSearchResults } from '../sources/serp.mjs';
 import { fetchLiveLibByIsbn, fetchLiveLibFromSearchResults } from '../sources/livelib.mjs';
 import { fetchIsbnSearchByIsbn } from '../sources/isbnSearch.mjs';
 import { fetchIsbnDbByIsbn } from '../sources/isbnDb.mjs';
@@ -49,10 +49,9 @@ export class BookResolverService {
    * Алгоритм:
    * 1. Нормализация и валидация ISBN
    * 2. Проверка кэша (возврат если данные свежие)
-   * 3. Параллельный опрос всех источников:
-   *    - SERP (поисковик)
-   *    - LiveLib (через SERP)
+   * 3. Параллельный опрос источников:
    *    - LiveLib (прямой поиск по ISBN)
+   *    - LiveLib (через поиск по сохранённым ссылкам)
    *    - ISBN Search
    *    - ISBNdb
    * 4. Нормализация и слияние данных
@@ -83,41 +82,30 @@ export class BookResolverService {
       };
     }
 
-    // Формируем промисы для параллельного запроса всех источников
-    // SERP - поиск в интернете
-    const serpResultsPromise = this.safeSource('serp', () => 
-      fetchSearchResults(normalizedIsbn, { timeoutMs: this.timeoutMs })
-    );
-
-    // LiveLib через результаты SERP (цепочка зависимостей)
-    const livelibFromSerpPromise = serpResultsPromise.then((serpResults) =>
-      this.safeSource('livelib', () => 
-        fetchLiveLibFromSearchResults(serpResults, { timeoutMs: this.timeoutMs })
-      )
-    );
-
-    // Запускаем все запросы параллельно
-    const [serpResults, livelibFromSearch, livelibByIsbn, isbnSearch, isbnDb] = await Promise.all([
-      serpResultsPromise,
-      livelibFromSerpPromise,
-      this.safeSource('livelib', () => 
+    // Запускаем все запросы параллельно (SERP исключён)
+    const [livelibFromSearch, livelibByIsbn, isbnSearch, isbnDb] = await Promise.all([
+      // LiveLib через сохранённые ссылки (ранее получаемые из SERP)
+      this.safeSource('livelib', () =>
+        fetchLiveLibFromSearchResults([], { timeoutMs: this.timeoutMs })
+      ),
+      // Прямой поиск LiveLib по ISBN
+      this.safeSource('livelib', () =>
         fetchLiveLibByIsbn(normalizedIsbn, { timeoutMs: this.timeoutMs })
       ),
-      this.safeSource('isbn_search', () => 
+      this.safeSource('isbn_search', () =>
         fetchIsbnSearchByIsbn(normalizedIsbn, { timeoutMs: this.timeoutMs })
       ),
-      this.safeSource('isbn_db', () => 
+      this.safeSource('isbn_db', () =>
         fetchIsbnDbByIsbn(normalizedIsbn, { timeoutMs: this.timeoutMs })
       ),
     ]);
 
-    // Объединяем все результаты в один массив
+    // Объединяем все результаты в один массив (без SERP)
     const sourceCandidates = [
-      ...livelibFromSearch, 
-      ...livelibByIsbn, 
-      ...isbnSearch, 
-      ...isbnDb, 
-      ...serpResults
+      ...livelibFromSearch,
+      ...livelibByIsbn,
+      ...isbnSearch,
+      ...isbnDb,
     ];
 
     // Нормализуем и группируем результаты
@@ -144,7 +132,7 @@ export class BookResolverService {
       body: {
         ...toPublicBook(best),
         variants,
-        cache: { hit: false } // Указываем, что это не из кэша
+        cache: { hit: false }, // Указываем, что это не из кэша
       },
     };
   }
@@ -152,18 +140,9 @@ export class BookResolverService {
   /**
    * Поиск книг по текстовому запросу
    * @param {string} query - Поисковый запрос
-   * @returns {Promise<Object>} - Ответ со списком книг или ошибкой
+   * @returns {Promise<Object>} - Ответ с ошибкой (поиск без SERP не поддерживается)
    * 
-   * Особенности:
-   * - Если запрос похож на ISBN - перенаправляет в resolveByIsbn
-   * - Иначе выполняет поиск через SERP и LiveLib
-   * - Возвращает до 10 результатов
-   * - Сохраняет все найденные книги в кэш
-   * 
-   * Отличие от resolveByIsbn: 
-   * - Меньше источников (только SERP + LiveLib)
-   * - Возвращает список, а не одну книгу
-   * - Не проверяет кэш перед запросом
+   * Ранее использовал SERP для получения ссылок, без него текстовый поиск невозможен.
    */
   async search(query) {
     const q = String(query || '').trim();
@@ -172,39 +151,10 @@ export class BookResolverService {
     // Если запрос похож на ISBN - используем точный поиск
     if (looksLikeIsbn(q)) return this.resolveByIsbn(q);
 
-    // Иначе выполняем поиск по тексту
-    // SERP - поиск в интернете
-    const serpResultsPromise = this.safeSource('serp', () => 
-      fetchSearchResults(q, { timeoutMs: this.timeoutMs })
-    );
-
-    // LiveLib через результаты SERP
-    const livelibPromise = serpResultsPromise.then((serpResults) =>
-      this.safeSource('livelib', () => 
-        fetchLiveLibFromSearchResults(serpResults, { timeoutMs: this.timeoutMs })
-      )
-    );
-
-    // Запускаем запросы параллельно
-    const [serpResults, livelib] = await Promise.all([serpResultsPromise, livelibPromise]);
-
-    // Нормализуем и объединяем результаты (максимум 10)
-    const normalized = normalizeBooks([...livelib, ...serpResults]).slice(0, 10);
-
-    // Сохраняем все найденные книги в кэш
-    for (const book of normalized) {
-      if (book.isbn) this.cache.upsert(book);
-    }
-
+    // Текстовый поиск отключён
     return {
-      status: 200,
-      body: {
-        query: q,
-        results: normalized.map((book) => ({ 
-          ...toPublicBook(book), 
-          cache: { hit: false } 
-        })),
-      },
+      status: 501,
+      body: { error: 'Text search is not available without SERP integration' },
     };
   }
 
@@ -236,16 +186,11 @@ export class BookResolverService {
  * @param {Object} book - Объект книги из кэша
  * @returns {boolean} - true если книга из доверенных источников
  * 
- * Фильтрует только книги из основных источников:
- * - livelib - социальная сеть книголюбов
- * - isbn_search - база ISBN
- * - isbn_db - база ISBNdb
- * - serp - поисковик (только для первичных данных)
- * 
- * Книги из других источников не кэшируются
+ * Доверенные источники: livelib, isbn_search, isbn_db.
+ * SERP исключён, так как больше не используется.
  */
 function isAllowedCachedBook(book) {
-  const allowed = new Set(['livelib', 'isbn_search', 'isbn_db', 'serp']);
+  const allowed = new Set(['livelib', 'isbn_search', 'isbn_db']);
   return (book.sources || []).every((source) => allowed.has(source));
 }
 
@@ -256,14 +201,10 @@ function isAllowedCachedBook(book) {
  * @returns {Array} - Список уникальных вариантов книг (макс. 8)
  * 
  * Алгоритм построения вариантов:
- * 1. Сначала идут нормализованные книги (с высоким confidence)
+ * 1. Сначала идут нормализованные книги
  * 2. Затем добавляются сырые результаты из источников
  * 3. Исключаются дубликаты по ISBN+название+авторы+источники
- * 4. SERP-результаты добавляются только если нет других вариантов
- * 5. Ограничение - максимум 8 вариантов
- * 
- * Это позволяет пользователю выбрать наиболее подходящий вариант,
- * если автоматический выбор оказался неверным
+ * 4. Ограничение - максимум 8 вариантов
  */
 function buildVariants(normalizedBooks, sourceCandidates) {
   const variants = [];
@@ -276,14 +217,11 @@ function buildVariants(normalizedBooks, sourceCandidates) {
     // Пропускаем книги без названия
     if (!publicBook.title) continue;
 
-    // Пропускаем SERP-результаты, если есть другие варианты
-    if (variants.length > 0 && publicBook.sources.length === 1 && publicBook.sources[0] === 'serp') continue;
-
     // Формируем ключ для проверки дубликатов
     const key = [
-      publicBook.isbn, 
-      publicBook.title, 
-      publicBook.authors.join(','), 
+      publicBook.isbn,
+      publicBook.title,
+      publicBook.authors.join(','),
       publicBook.sources.join(',')
     ].join('|').toLocaleLowerCase('ru-RU');
 

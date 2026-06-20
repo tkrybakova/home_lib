@@ -1,5 +1,4 @@
 import { esc, formatDate } from './utils.js';
-import { editEntity } from './crud.js'; // циклическая зависимость, но импортируем позже, в функции
 
 // Состояние модального окна
 export let modal = {
@@ -139,9 +138,9 @@ export function renderModal() {
   });
 
   modalEl.querySelector('[data-action="edit-book"]')?.addEventListener('click', () => {
-    const book = modal.book;
+    const onEdit = modal.onEdit;
     closeModal();
-    if (book) editEntity(book, 'book');
+    if (onEdit) onEdit();
   });
 
   setTimeout(() => {

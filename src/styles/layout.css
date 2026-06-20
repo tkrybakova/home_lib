@@ -1,0 +1,72 @@
+/* ========== Основной контейнер и верхняя панель ========== */
+
+/* Основной блок приложения */
+main {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  min-height: 500px;
+}
+
+/* Верхняя панель с заголовком и кнопками действий */
+.topbar {
+  background: var(--bg-topbar);
+  color: var(--text-light);
+  padding: 16px 24px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.topbar h1 {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  margin: 0;
+  flex: 1;
+  min-width: 120px;
+}
+
+/* Группа кнопок в правой части верхней панели */
+.topbar-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Стандартная кнопка в верхней панели */
+.topbar button {
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: var(--text-light);
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: var(--transition);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.topbar button:hover {
+  background: rgba(255, 255, 255, 0.2);
+  transform: translateY(-1px);
+}
+
+.topbar button.danger:hover {
+  background: rgba(255, 0, 0, 0.25);
+}
+
+.topbar button.back-btn:hover {
+  transform: translateX(-2px);
+}
+
+/* Отступ для всего содержимого кроме верхней панели */
+main > :not(.topbar) {
+  padding: 24px;
+}
