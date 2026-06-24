@@ -1,5 +1,5 @@
 // Импорт утилит для нормализации ISBN и удаления дубликатов
-import { normalizeIsbn, uniqueStrings } from '../utils/isbn.mjs';
+import { normalizeIsbn, uniqueStrings } from './utils/isbn.mjs';
 
 // Приоритет источников данных (от наиболее надежного к наименее)
 const PRIORITY = ['livelib', 'isbn_db', 'isbn_search', 'serp'];
