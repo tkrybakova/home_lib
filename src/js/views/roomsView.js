@@ -1,4 +1,5 @@
-import { lib, esc } from './state.js';
+import { lib } from '../state.js';
+import { esc } from '../utils.js';
 
 /**
  * Отрисовывает список помещений текущей библиотеки.

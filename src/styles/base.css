@@ -5,36 +5,38 @@
   box-sizing: border-box;
 }
 
+/* === Тёмная тема (из примера Hardback) === */
 :root {
-  --bg-primary: #f5f0eb;
-  --bg-card: #ffffff;
-  --bg-topbar: #2c1810;
-  --text-primary: #2c1810;
-  --text-secondary: #5a3d32;
-  --text-light: #f5f0eb;
-  --accent: #8b5e3c;
-  --accent-hover: #6d4a2f;
+  --bg-primary: #0a0a0a;
+  --bg-card: #141414;
+  --bg-topbar: #1a1a1a;
+  --text-primary: #f0f0f0;
+  --text-secondary: #888;
+  --text-light: #f0f0f0;
+  --accent: #c8a87c;
+  --accent-hover: #b3926a;
   --success: #2d7d46;
   --danger: #b33c3c;
-  --border: #d4c5b8;
-  --shadow: 0 4px 20px rgba(44, 24, 16, 0.1);
-  --shadow-lg: 0 8px 32px rgba(44, 24, 16, 0.15);
+  --border: rgba(255,255,255,0.08);
+  --shadow: 0 4px 20px rgba(0,0,0,0.4);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,0.6);
   --radius: 16px;
-  --transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  --transition: 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   background: var(--bg-primary);
   color: var(--text-primary);
-  min-height: 100vh;
-  display: flex;
-  justify-content: center;
-  padding: 20px;
-  text-size-adjust: 100%;
-  -webkit-user-select: none;
-  user-select: none;
 }
+
+/* Скроллбар под тёмную тему */
+::-webkit-scrollbar-track {
+  background: var(--bg-card);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--accent);
+}
+
 
 #app {
   width: 100%;

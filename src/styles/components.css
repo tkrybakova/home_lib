@@ -263,3 +263,79 @@
 .book.horizontal {
   width: 100%;
 }
+
+.schema-container {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 40px;
+  padding: 40px 20px;
+  background-color: #eaddcd; /* бежевый фон */
+}
+
+.library-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.library-card {
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  transition: transform 0.2s;
+}
+
+.library-card:hover {
+  transform: scale(1.05);
+}
+
+.library-image-placeholder {
+  width: 180px;
+  height: 180px;
+  background: #d8cfc0;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  box-shadow: 0 10px 15px rgba(0,0,0,0.05);
+}
+
+.library-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;  /* чтобы картинка заполнила блок */
+}
+
+.add-placeholder {
+  background: white;
+  border: 2px dashed #5c4f4a;
+}
+
+.plus-icon {
+  font-size: 70px;
+  color: #5c4f4a;
+  font-weight: 300;
+}
+
+.library-name {
+  font-size: 24px;
+  font-weight: 400;
+  letter-spacing: 1px;
+  color: #5c4f4a;
+}
+
+.library-badge {
+  font-size: 14px;
+  background: var(--accent);
+  color: white;
+  padding: 2px 12px;
+  border-radius: 20px;
+}

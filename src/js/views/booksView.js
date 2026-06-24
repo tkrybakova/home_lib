@@ -1,4 +1,5 @@
-import { findShelf, esc } from './state.js';
+import { findShelf } from '../state.js';
+import { esc } from '../utils.js';
 
 /**
  * Детальное представление книг на текущей полке.

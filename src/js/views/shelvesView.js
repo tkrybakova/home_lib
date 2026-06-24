@@ -1,4 +1,5 @@
-import { findCabinet, esc } from './state.js';
+import { findCabinet } from '../state.js';
+import { esc } from '../utils.js';
 
 /**
  * Преобразует массив книг в HTML-разметку для визуального представления на полке.

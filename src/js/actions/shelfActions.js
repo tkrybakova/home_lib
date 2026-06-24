@@ -1,7 +1,8 @@
-import { findCabinet, persist, findShelfById, findShelf } from './state.js';
-import { showModal, showToast } from './modal.js';
-import { render } from './render.js';
-import { createShelf } from './factories.js';
+import { findCabinet, persist, findShelfById, findShelf } from '../state.js';
+import { showModal } from '../modal.js';
+import { render } from '../renderMain.js';
+import { createShelf } from '../factories.js';
+import { showToast } from '../toast.js';
 
 /**
  * Добавление новой полки в текущий шкаф.

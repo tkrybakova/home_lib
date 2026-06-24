@@ -1,7 +1,7 @@
-import { state, persist, lib, ui } from './state.js';
-import { showModal } from './modal.js';
-import { render } from './render.js';
-import { createLibrary } from './factories.js';
+import { state, persist, lib, ui } from '../state.js';
+import { showModal } from '../modal.js';
+import { render } from '../renderMain.js';
+import { createLibrary } from '../factories.js';
 
 /**
  * Добавление новой библиотеки.

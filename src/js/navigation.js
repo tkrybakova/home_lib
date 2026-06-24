@@ -1,5 +1,5 @@
 import { ui } from './state.js';
-import { render } from './render.js';
+import { render } from './renderMain.js';
 
 /**
  * Переход на указанный шаг интерфейса.

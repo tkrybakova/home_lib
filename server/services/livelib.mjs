@@ -1,6 +1,6 @@
 // Импорт утилит для работы с сетью и нормализации данных
-import { fetchText } from '../utils/fetchJson.mjs';
-import { normalizeIsbn, parseYear, uniqueStrings } from '../utils/isbn.mjs';
+import { fetchText } from '../../backend/utils/fetchJson.mjs';
+import { normalizeIsbn, parseYear, uniqueStrings } from '../../backend/utils/isbn.mjs';
 
 // Константа источника данных
 const SOURCE = 'livelib';

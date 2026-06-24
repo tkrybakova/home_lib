@@ -149,4 +149,4 @@ export function renderModal() {
 }
 
 // Импортируем showToast для ошибок (зависимость от render.js, но вынесем пока)
-import { showToast } from './render.js'; // пока так, но потом перенесём toast в отдельный модуль
+import { showToast } from './toast.js'; // пока так, но потом перенесём toast в отдельный модуль

@@ -1,5 +1,5 @@
 // Импорт утилит для сетевых запросов и нормализации ISBN
-import { fetchText } from '../utils/fetchJson.mjs';
+import { fetchText } from '../utils/mergeResults.js';
 import { normalizeIsbn } from '../utils/isbn.mjs';
 // Парсер страницы вынесен в отдельный модуль
 import { parseIsbnSearchPage } from './isbnSearchParser.mjs';

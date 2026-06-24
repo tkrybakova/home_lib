@@ -1,4 +1,5 @@
-import { findRoom, esc } from './state.js';
+import { findRoom } from '../state.js';
+import { esc } from '../utils.js';
 
 /**
  * Отрисовывает список шкафов в текущем помещении.

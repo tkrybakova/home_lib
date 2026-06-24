@@ -1,9 +1,9 @@
-import { findShelfById, findShelf, persist } from './state.js';
-import { showModal, showToast } from './modal.js';
-import { render } from './render.js';
-import { createBook } from './factories.js';
-import { fetchBookByIsbn } from './booksApi.js';
-
+import { findShelfById, findShelf, persist } from '../state.js';
+import { showModal } from '../modal.js';
+import { render } from '../renderMain.js';
+import { createBook } from '../factories.js';
+import { fetchBookByIsbn } from '../booksApi.js';
+import { showToast } from '../toast.js';
 /**
  * Добавление книги вручную на указанную или текущую полку.
  * @param {string} [shelfId] – ID полки (если не передан, используется текущая полка UI)

@@ -1,7 +1,8 @@
-import { findRoom, persist, findCabinet } from './state.js';
-import { showModal, showToast } from './modal.js';
-import { render } from './render.js';
-import { createCabinet } from './factories.js';
+import { findRoom, persist, findCabinet } from '../state.js';
+import { showModal } from '../modal.js';
+import { render } from '../renderMain.js';
+import { createCabinet } from '../factories.js';
+import { showToast } from '../toast.js';
 
 /**
  * Добавление нового шкафа в текущее помещение.

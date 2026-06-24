@@ -1,7 +1,8 @@
-import { lib, persist, findRoom } from './state.js';
-import { showModal, showToast } from './modal.js';
-import { render } from './render.js';
-import { createRoom } from './factories.js';
+import { lib, persist, findRoom } from '../state.js';
+import { showModal } from '../modal.js';
+import { render } from '../renderMain.js';
+import { createRoom } from '../factories.js';
+import { showToast } from '../toast.js';
 
 /**
  * Добавление нового помещения в текущую библиотеку.

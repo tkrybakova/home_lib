@@ -1,7 +1,8 @@
-import { state, ui, persist, lib, findRoom, findCabinet } from './state.js';
-import { showModal, showToast } from './modal.js';
-import { render } from './render.js';
-import { now } from './utils.js';
+import { state, ui, persist, lib, findRoom, findCabinet } from '../state.js';
+import { showModal } from '../modal.js';
+import { render } from '../renderMain.js';
+import { now } from '../utils.js';
+import { showToast } from '../toast.js';
 
 /**
  * Универсальное редактирование сущности (книги, полки, библиотеки, комнаты, шкафа).

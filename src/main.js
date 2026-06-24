@@ -1,6 +1,6 @@
-import { render } from './js/render.js';
+import { render } from './js/renderMain.js';
 import { initEvents } from './js/eventHandlers.js';
-import { go } from './js/modal.js';// или вынести в отдельный navigation.js
+import { go } from './js/navigation.js';// или вынести в отдельный navigation.js
 
 // Инициализация приложения
 render();
