@@ -2,28 +2,34 @@
 
 /* Основной блок приложения */
 main {
-  background: var(--bg-card);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.045), transparent 180px),
+    var(--bg-card);
+  border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
   overflow: hidden;
   min-height: 500px;
+  backdrop-filter: blur(18px);
 }
 
 /* Верхняя панель с заголовком и кнопками действий */
 .topbar {
   background: var(--bg-topbar);
   color: var(--text-light);
-  padding: 16px 24px;
+  padding: 20px 28px;
   display: flex;
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
+  border-bottom: 1px solid var(--border);
+  box-shadow: inset 0 -1px 0 rgba(255,255,255,0.03);
 }
 
 .topbar h1 {
-  font-size: 22px;
-  font-weight: 600;
-  letter-spacing: 0.5px;
+  font-size: clamp(22px, 3vw, 34px);
+  font-weight: 800;
+  letter-spacing: -0.03em;
   margin: 0;
   flex: 1;
   min-width: 120px;
@@ -32,19 +38,19 @@ main {
 /* Группа кнопок в правой части верхней панели */
 .topbar-actions {
   display: flex;
-  gap: 8px;
+  gap: 10px;
   flex-wrap: wrap;
 }
 
 /* Стандартная кнопка в верхней панели */
 .topbar button {
-  background: rgba(255, 255, 255, 0.1);
-  border: none;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-strong);
   color: var(--text-light);
-  padding: 6px 14px;
-  border-radius: 8px;
+  padding: 9px 14px;
+  border-radius: 999px;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 700;
   cursor: pointer;
   transition: var(--transition);
   display: inline-flex;
@@ -54,7 +60,8 @@ main {
 }
 
 .topbar button:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--accent-soft);
+  border-color: rgba(200, 168, 124, 0.42);
   transform: translateY(-1px);
 }
 

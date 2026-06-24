@@ -13,20 +13,46 @@ function renderBooksHTML(books) {
   while (i < books.length) {
     const book = books[i];
     const visual = book.visual || { type: 'upright', height: 200, width: 20, lean: null };
+    const color = Math.abs(hashString(`${book.id}-${book.title}`)) % 12;
 
     if (visual.type === 'horizontal') {
       html += '<div class="horizontal-stack">';
       while (i < books.length && books[i].visual && books[i].visual.type === 'horizontal') {
         const b = books[i];
         const v = b.visual;
-        html += `<div class="book horizontal" style="height:${v.height}px;width:${v.width}px;" data-book-id="${b.id}"></div>`;
+        const stackColor = Math.abs(hashString(`${b.id}-${b.title}`)) % 12;
+        html += `
+          <div
+            class="book hardback-book horizontal"
+            style="height:${v.height}px;width:${v.width}px;"
+            data-book-id="${b.id}"
+            data-color="${stackColor}"
+            title="${esc(b.title)}"
+          >
+            <span class="book-shine"></span>
+          </div>
+        `;
         i++;
       }
       html += '</div>';
     } else {
       const v = visual;
       const leanClass = v.lean ? ` lean-${v.lean}` : '';
-      html += `<div class="book upright${leanClass}" style="height:${v.height}px;width:${v.width}px;" data-book-id="${book.id}"></div>`;
+      html += `
+        <div
+          class="book hardback-book upright${leanClass}"
+          style="height:${v.height}px;width:${Math.max(v.width, 26)}px;"
+          data-book-id="${book.id}"
+          data-color="${color}"
+          title="${esc(book.title)}"
+        >
+          <div class="book-spine">
+            <span class="book-spine__title">${esc(book.title)}</span>
+            ${book.author ? `<span class="book-spine__author">${esc(book.author)}</span>` : ''}
+          </div>
+          <span class="book-shine"></span>
+        </div>
+      `;
       i++;
     }
   }
@@ -49,7 +75,23 @@ export function renderShelves() {
     `;
   }
 
-  let html = `<button class="add-btn" data-action="add-shelf">➕ Новая полка</button>`;
+  const totalBooks = shelves.reduce((sum, shelf) => sum + (shelf.books?.length || 0), 0);
+
+  let html = `
+    <section class="hardback-stage" aria-label="Интерактивный книжный шкаф">
+      <div class="hardback-stage__copy">
+        <span class="stage-badge">✦ Hardback · Interactive shelf</span>
+        <h2>Живой шкаф «${esc(cabinet.name)}»</h2>
+        <p>Наводите на корешки и открывайте книги прямо с полки. Интерфейс вдохновлён премиальным 3D bookshelf-блоком, но использует ваши реальные данные.</p>
+      </div>
+      <div class="hardback-stage__stats" aria-label="Статистика шкафа">
+        <span><strong>${shelves.length}</strong> ${declOfNum(shelves.length, ['полка', 'полки', 'полок'])}</span>
+        <span><strong>${totalBooks}</strong> ${declOfNum(totalBooks, ['книга', 'книги', 'книг'])}</span>
+      </div>
+    </section>
+
+    <button class="add-btn" data-action="add-shelf">➕ Новая полка</button>
+  `;
 
   shelves.forEach(shelf => {
     const books = shelf.books || [];
@@ -67,12 +109,26 @@ export function renderShelves() {
             <button title="Удалить полку" class="btn-remove" data-action="delete-shelf" data-id="${shelf.id}">×</button>
           </div>
         </div>
-        <div class="books-container" data-shelf-id="${shelf.id}">
+        <div class="books-container hardback-bookshelf" data-shelf-id="${shelf.id}">
           ${books.length ? renderBooksHTML(books) : ''}
         </div>
+        ${books.length ? `
+          <div class="bookshelf-dots" aria-hidden="true">
+            ${books.slice(0, 12).map((_, index) => `<span class="${index === 0 ? 'active' : ''}"></span>`).join('')}
+          </div>
+        ` : ''}
       </div>
     `;
   });
 
   return html;
+}
+
+function hashString(value = '') {
+  return String(value).split('').reduce((hash, char) => ((hash << 5) - hash) + char.charCodeAt(0), 0);
+}
+
+function declOfNum(n, forms) {
+  const cases = [2, 0, 1, 1, 1, 2];
+  return forms[(n % 100 > 4 && n % 100 < 20) ? 2 : cases[Math.min(n % 10, 5)]];
 }
