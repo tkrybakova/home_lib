@@ -26,8 +26,35 @@
   }
 
   .card {
-    flex: 1 1 calc(50% - 12px);
     min-width: 140px;
+  }
+
+  .grid,
+  .books-grid,
+  .schema-container {
+    grid-template-columns: 1fr;
+  }
+
+  .books-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .books-count {
+    margin-left: 0;
+  }
+
+  .hardback-stage {
+    grid-template-columns: 1fr;
+    padding: 22px;
+  }
+
+  .hardback-stage__stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .hardback-stage__stats span {
+    min-width: 0;
   }
 
   .modal {

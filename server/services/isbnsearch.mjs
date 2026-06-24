@@ -1,8 +1,6 @@
 // Импорт утилит для сетевых запросов и нормализации ISBN
 import { fetchText } from '../utils/mergeResults.js';
 import { normalizeIsbn } from '../utils/isbn.mjs';
-// Парсер страницы вынесен в отдельный модуль
-import { parseIsbnSearchPage } from './isbnSearchParser.mjs';
 
 /**
  * Основная точка входа – получить данные книги по ISBN через isbnsearch.org.
@@ -34,4 +32,26 @@ export async function fetchIsbnSearchByIsbn(isbn, { timeoutMs = 3000 } = {}) {
 
   // Возвращаем только если удалось извлечь название
   return book?.title ? [book] : [];
+}
+
+export function parseIsbnSearchPage(html = '', url = '', isbnHint = '') {
+  const title = decodeHtml(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '').replace(/\s*[-|].*$/, '').trim();
+  return {
+    isbn: normalizeIsbn(isbnHint),
+    title,
+    authors: [],
+    publisher: '',
+    sources: ['isbn_search'],
+    links: [url],
+    raw: { isbn_search: { url } },
+  };
+}
+
+function decodeHtml(value = '') {
+  return String(value)
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '\"')
+    .replace(/&#39;/g, "'");
 }
