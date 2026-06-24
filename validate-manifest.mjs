@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 
-const manifestPath = new URL('../manifest.webmanifest', import.meta.url);
+const manifestPath = new URL('./manifest.webmanifest', import.meta.url);
 
 try {
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'));

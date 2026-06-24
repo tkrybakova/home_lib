@@ -1,13 +1,13 @@
 // backend/api/resolver.mjs
 // Импорт компонентов для работы с кэшем и источниками данных
-import { BookCache } from '../../backend/cache/sqliteCache.mjs';
+import { BookCache } from '../cache.mjs';
 import { fetchLiveLibByIsbn, fetchLiveLibFromSearchResults } from './livelib.mjs';
-import { fetchIsbnSearchByIsbn } from '../../backend/sources/isbnSearch.mjs';
+import { fetchIsbnSearchByIsbn } from './isbnsearch.mjs';
 import { fetchIsbnDbByIsbn } from './isbndb.mjs';
 // Импорт нормализаторов для приведения данных к единому формату
-import { normalizeBooks, toPublicBook } from '../backend/normalizer/index.mjs';
+import { normalizeBooks, toPublicBook } from '../index.js';
 // Импорт утилит для работы с ISBN
-import { looksLikeIsbn, normalizeIsbn } from '../../backend/utils/isbn.mjs';
+import { looksLikeIsbn, normalizeIsbn } from '../utils/isbn.mjs';
 
 // Таймаут по умолчанию для всех запросов к источникам
 const DEFAULT_TIMEOUT_MS = Number(process.env.BOOK_SOURCE_TIMEOUT_MS || 3000);
