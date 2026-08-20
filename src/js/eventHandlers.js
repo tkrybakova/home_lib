@@ -18,26 +18,24 @@ export function initEvents() {
   eventsInitialized = true;
 
   app.addEventListener('click', e => {
-    const bookEl = e.target.closest('.book');
+    const bookEl = e.target.closest('.book-card');
     if (bookEl && !e.target.closest('button')) {
       const bookId = bookEl.dataset.bookId;
       const cabinet = findCabinet();
-      if (cabinet) {
-        for (const shelf of cabinet.shelves || []) {
-          const book = (shelf.books || []).find(item => item.id === bookId);
-          if (book) {
-            showModal('book-details', {
-              book,
-              onEdit: () => editEntity(book, 'book')
-            });
-            return;
-          }
+      for (const shelf of cabinet?.shelves || []) {
+        const book = (shelf.books || []).find(item => item.id === bookId);
+        if (book) {
+          showModal('book-details', {
+            book,
+            onEdit: () => editEntity(book, 'book')
+          });
+          return;
         }
       }
     }
 
     const container = e.target.closest('.books-container');
-    if (container && !e.target.closest('.book')) {
+    if (container && !e.target.closest('.book-card')) {
       const shelfId = container.dataset.shelfId;
       if (shelfId) addBook(shelfId);
       return;
@@ -50,41 +48,19 @@ export function initEvents() {
     switch (action) {
       case 'back':
         switch (ui.step) {
-          case 'books':
-            go('shelves', { roomId: ui.roomId, cabinetId: ui.cabinetId });
-            break;
-          case 'shelves':
-            go('cabinets', { roomId: ui.roomId });
-            break;
-          case 'cabinets':
-            go('rooms');
-            break;
-          case 'rooms':
-            go('libraries');
-            break;
+          case 'books': go('shelves', { roomId: ui.roomId, cabinetId: ui.cabinetId }); break;
+          case 'shelves': go('cabinets', { roomId: ui.roomId }); break;
+          case 'cabinets': go('rooms'); break;
+          case 'rooms': go('libraries'); break;
         }
         break;
-      case 'add-library':
-        addLibrary();
-        break;
-      case 'add-room':
-        addRoom();
-        break;
-      case 'add-cabinet':
-        addCabinet();
-        break;
-      case 'add-shelf':
-        addShelf();
-        break;
-      case 'add-book':
-        addBook();
-        break;
-      case 'add-book-isbn':
-        addBookByIsbn();
-        break;
-      case 'add-book-to-shelf':
-        addBook(shelfId);
-        break;
+      case 'add-library': addLibrary(); break;
+      case 'add-room': addRoom(); break;
+      case 'add-cabinet': addCabinet(); break;
+      case 'add-shelf': addShelf(); break;
+      case 'add-book': addBook(); break;
+      case 'add-book-isbn': addBookByIsbn(); break;
+      case 'add-book-to-shelf': addBook(shelfId); break;
       case 'open-library':
         if (!state.libraries.some(library => library.id === id)) break;
         state.activeLibraryId = id;
@@ -111,20 +87,17 @@ export function initEvents() {
         break;
       }
       case 'edit-shelf': {
-        const cabinet = findCabinet();
-        const shelf = cabinet?.shelves?.find(item => item.id === id);
+        const shelf = findCabinet()?.shelves?.find(item => item.id === id);
         if (shelf) editEntity(shelf, 'shelf');
         break;
       }
       case 'delete-shelf': {
-        const cabinet = findCabinet();
-        const shelf = cabinet?.shelves?.find(item => item.id === id);
+        const shelf = findCabinet()?.shelves?.find(item => item.id === id);
         if (shelf) deleteEntityWithConfirm(shelf, 'shelf');
         break;
       }
       case 'edit-book': {
-        const cabinet = findCabinet();
-        for (const shelf of cabinet?.shelves || []) {
+        for (const shelf of findCabinet()?.shelves || []) {
           const book = (shelf.books || []).find(item => item.id === id);
           if (book) {
             closeModal();
@@ -135,8 +108,7 @@ export function initEvents() {
         break;
       }
       case 'delete-book': {
-        const cabinet = findCabinet();
-        for (const shelf of cabinet?.shelves || []) {
+        for (const shelf of findCabinet()?.shelves || []) {
           const book = (shelf.books || []).find(item => item.id === id);
           if (book) {
             deleteEntityWithConfirm(book, 'book');
@@ -150,5 +122,5 @@ export function initEvents() {
 
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') closeModal();
-  }, { once: false });
+  });
 }
