@@ -7,14 +7,30 @@ import { renderBooks } from './views/booksView.js';
 
 export function render() {
   const app = document.querySelector('#app');
+  if (!app) return;
+
   app.innerHTML = `
-    <main>
-      <div class="topbar">
-        ${ui.step !== 'libraries' ? '<button class="back-btn" data-action="back">← Назад</button>' : ''}
-        <h1>${title()}</h1>
+    <main class="app-shell">
+      <header class="topbar">
+        <div class="brand-mark" aria-hidden="true"><span>HL</span></div>
+        <div class="topbar-main">
+          <div class="eyebrow">PRIVATE ARCHIVE · HOME LIBRARY</div>
+          <div class="title-row">
+            ${ui.step !== 'libraries' ? '<button class="back-btn" data-action="back" aria-label="Назад">←</button>' : ''}
+            <div>
+              <h1>${title()}</h1>
+              <div class="title-rule"></div>
+            </div>
+          </div>
+          ${renderBreadcrumbs()}
+        </div>
         <div class="topbar-actions">${renderContextActions()}</div>
-      </div>
-      ${view()}
+      </header>
+      <section class="content-frame">
+        <div class="content-ornament" aria-hidden="true">✦</div>
+        ${view()}
+      </section>
+      <footer class="app-footer"><span>Домашняя библиотека</span><span class="footer-line"></span><span>personal archive</span></footer>
     </main>
   `;
 }
@@ -22,6 +38,13 @@ export function render() {
 function title() {
   const map = { libraries: 'Мои библиотеки', rooms: 'Помещения', cabinets: 'Шкафы', shelves: 'Полки', books: 'Книги' };
   return map[ui.step] || '';
+}
+
+function renderBreadcrumbs() {
+  if (ui.step === 'libraries') return '<span class="breadcrumb current">Главная коллекция</span>';
+  const labels = { rooms: 'Библиотека', cabinets: 'Помещение', shelves: 'Шкаф', books: 'Полка' };
+  const parent = getParentEntity();
+  return `<span class="breadcrumb"><span>${labels[ui.step] || 'Архив'}</span><span class="breadcrumb-separator">/</span><strong>${parent?.name || parent?.title || 'Текущий раздел'}</strong></span>`;
 }
 
 function renderContextActions() {
@@ -36,18 +59,18 @@ function renderContextActions() {
     else if (ui.step === 'books') type = 'shelf';
 
     if (type) {
-      actions.push(`<button data-action="edit-parent" data-type="${type}">Изменить</button>`);
-      actions.push(`<button class="danger" data-action="delete-parent" data-type="${type}">Удалить</button>`);
+      actions.push(`<button class="action-quiet" data-action="edit-parent" data-type="${type}">Изменить</button>`);
+      actions.push(`<button class="action-danger" data-action="delete-parent" data-type="${type}">Удалить</button>`);
     }
   }
 
   if (ui.step === 'books') {
-    actions.push('<button data-action="add-book-isbn">По ISBN</button>');
-    actions.push('<button data-action="add-book">+ Книга</button>');
+    actions.push('<button class="action-quiet" data-action="add-book-isbn">По ISBN</button>');
+    actions.push('<button class="action-primary" data-action="add-book">+ Книга</button>');
   }
-  if (ui.step === 'shelves') actions.push('<button data-action="add-shelf">+ Полка</button>');
-  if (ui.step === 'rooms' && lib()) actions.push('<button data-action="add-room">+ Помещение</button>');
-  if (ui.step === 'cabinets' && findRoom()) actions.push('<button data-action="add-cabinet">+ Шкаф</button>');
+  if (ui.step === 'shelves') actions.push('<button class="action-primary" data-action="add-shelf">+ Полка</button>');
+  if (ui.step === 'rooms' && lib()) actions.push('<button class="action-primary" data-action="add-room">+ Помещение</button>');
+  if (ui.step === 'cabinets' && findRoom()) actions.push('<button class="action-primary" data-action="add-cabinet">+ Шкаф</button>');
 
   return actions.join('');
 }
