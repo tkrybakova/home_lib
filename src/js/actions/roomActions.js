@@ -1,4 +1,4 @@
-import { state, lib, persist } from '../state.js';
+import { state, persist } from '../state.js';
 import { showModal } from '../modal.js';
 import { render } from '../renderMain.js';
 import { createRoom } from '../factories.js';
@@ -16,8 +16,16 @@ export function addRoom() {
     ],
     onSave: (data) => {
       const targetLibrary = state.libraries.find(item => item.id === libraryId);
-      if (!targetLibrary) return showToast('Библиотека больше не существует', 'error');
-      targetLibrary.rooms.push(createRoom(data.name));
+      if (!targetLibrary) {
+        showToast('Библиотека больше не существует', 'error');
+        return false;
+      }
+      const name = String(data.name || '').trim();
+      if (!name) {
+        showToast('Введите название помещения', 'error');
+        return false;
+      }
+      targetLibrary.rooms.push(createRoom(name));
       persist();
       render();
     }
