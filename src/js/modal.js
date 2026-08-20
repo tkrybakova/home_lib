@@ -1,6 +1,6 @@
 import { esc, formatDate } from './utils.js';
+import { showToast } from './toast.js';
 
-// Состояние модального окна
 export let modal = {
   isOpen: false,
   type: null,
@@ -36,8 +36,8 @@ export function renderModal() {
   if (modal.type === 'confirm') {
     modalEl.innerHTML = `
       <button class="close-btn" data-close>×</button>
-      <h2>${modal.title}</h2>
-      <p style="margin-bottom:20px;color:var(--text-secondary);">${modal.message || ''}</p>
+      <h2>${esc(modal.title || '')}</h2>
+      <p style="margin-bottom:20px;color:var(--text-secondary);">${esc(modal.message || '')}</p>
       <div class="modal-actions">
         <button class="btn-secondary" data-close>Отмена</button>
         <button class="btn-danger" data-confirm>Удалить</button>
@@ -46,28 +46,34 @@ export function renderModal() {
   } else if (modal.type === 'edit' || modal.type === 'add-book-isbn') {
     modalEl.innerHTML = `
       <button class="close-btn" data-close>×</button>
-      <h2>${modal.title}</h2>
+      <h2>${esc(modal.title || '')}</h2>
       <form data-form>
-        ${modal.fields?.map(f => `
-          <label for="field-${f.key}">${f.label}${f.required ? ' *' : ''}</label>
-          ${f.type === 'textarea' ? `
-            <textarea 
-              id="field-${f.key}" 
-              name="field-${f.key}"
-              placeholder="${f.placeholder || ''}" 
-              ${f.required ? 'required' : ''}
-            >${f.value || ''}</textarea>
-          ` : `
-            <input 
-              id="field-${f.key}" 
-              name="field-${f.key}"
-              type="${f.type || 'text'}" 
-              placeholder="${f.placeholder || ''}" 
-              value="${f.value || ''}" 
-              ${f.required ? 'required' : ''}
-            />
-          `}
-        `).join('')}
+        ${modal.fields?.map(f => {
+          const key = esc(f.key);
+          const label = esc(f.label || '');
+          const placeholder = esc(f.placeholder || '');
+          const value = esc(f.value || '');
+          return `
+            <label for="field-${key}">${label}${f.required ? ' *' : ''}</label>
+            ${f.type === 'textarea' ? `
+              <textarea
+                id="field-${key}"
+                name="field-${key}"
+                placeholder="${placeholder}"
+                ${f.required ? 'required' : ''}
+              >${value}</textarea>
+            ` : `
+              <input
+                id="field-${key}"
+                name="field-${key}"
+                type="${esc(f.type || 'text')}"
+                placeholder="${placeholder}"
+                value="${value}"
+                ${f.required ? 'required' : ''}
+              />
+            `}
+          `;
+        }).join('')}
         ${modal.type === 'add-book-isbn' ? `
           <div style="margin-top:8px;padding:12px;background:var(--bg-primary);border-radius:8px;font-size:13px;color:var(--text-secondary);">
             💡 Если книга не будет найдена, вы сможете ввести данные вручную.
@@ -109,14 +115,14 @@ export function renderModal() {
       </div>
       <div class="modal-actions">
         <button class="btn-secondary" data-close>Закрыть</button>
-        <button class="btn-primary" data-action="edit-book" data-id="${book.id}">✏️ Редактировать</button>
+        <button class="btn-primary" data-action="edit-book" data-id="${esc(book.id)}">✏️ Редактировать</button>
       </div>
     `;
   } else {
     modalEl.innerHTML = `
       <button class="close-btn" data-close>×</button>
-      <h2>${modal.title || 'Ошибка'}</h2>
-      <p style="color:var(--text-secondary);">${modal.message || ''}</p>
+      <h2>${esc(modal.title || 'Ошибка')}</h2>
+      <p style="color:var(--text-secondary);">${esc(modal.message || '')}</p>
       <div class="modal-actions">
         <button class="btn-primary" data-close>OK</button>
       </div>
@@ -147,6 +153,3 @@ export function renderModal() {
     modalEl.querySelector('input:not([type="hidden"]), textarea')?.focus();
   }, 100);
 }
-
-// Импортируем showToast для ошибок (зависимость от render.js, но вынесем пока)
-import { showToast } from './toast.js'; // пока так, но потом перенесём toast в отдельный модуль
