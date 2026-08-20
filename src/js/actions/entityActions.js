@@ -1,4 +1,4 @@
-import { state, ui, persist, lib, findRoom, findCabinet } from '../state.js';
+import { state, ui, persist, lib } from '../state.js';
 import { showModal } from '../modal.js';
 import { render } from '../renderMain.js';
 import { now, normalizeIsbn, isValidIsbn } from '../utils.js';
@@ -9,12 +9,46 @@ function positiveNumber(value, fallback) {
   return Number.isFinite(number) && number > 0 ? number : fallback;
 }
 
-function findBookById(bookId) {
-  const cabinet = findCabinet();
-  if (!cabinet) return null;
-  for (const shelf of cabinet.shelves || []) {
-    const book = (shelf.books || []).find(item => item.id === bookId);
-    if (book) return { shelf, book };
+function findRoomById(roomId) {
+  for (const library of state.libraries) {
+    const room = (library.rooms || []).find(item => item.id === roomId);
+    if (room) return room;
+  }
+  return null;
+}
+
+function findCabinetById(cabinetId) {
+  for (const library of state.libraries) {
+    for (const room of library.rooms || []) {
+      const cabinet = (room.cabinets || []).find(item => item.id === cabinetId);
+      if (cabinet) return cabinet;
+    }
+  }
+  return null;
+}
+
+function findShelfByIdGlobal(shelfId) {
+  for (const library of state.libraries) {
+    for (const room of library.rooms || []) {
+      for (const cabinet of room.cabinets || []) {
+        const shelf = (cabinet.shelves || []).find(item => item.id === shelfId);
+        if (shelf) return { cabinet, shelf };
+      }
+    }
+  }
+  return null;
+}
+
+function findBookByIdGlobal(bookId) {
+  for (const library of state.libraries) {
+    for (const room of library.rooms || []) {
+      for (const cabinet of room.cabinets || []) {
+        for (const shelf of cabinet.shelves || []) {
+          const book = (shelf.books || []).find(item => item.id === bookId);
+          if (book) return { shelf, book };
+        }
+      }
+    }
   }
   return null;
 }
@@ -58,7 +92,7 @@ export function editEntity(entity, type) {
     fields,
     onSave: (data) => {
       if (type === 'book') {
-        const found = findBookById(entityId);
+        const found = findBookByIdGlobal(entityId);
         if (!found) return showToast('Книга больше не существует', 'error');
         const isbn = normalizeIsbn(data.isbn);
         if (isbn && !isValidIsbn(isbn)) return showToast('Некорректный ISBN', 'error');
@@ -68,28 +102,24 @@ export function editEntity(entity, type) {
         found.book.description = String(data.description || '').trim();
         found.book.updatedAt = now();
       } else if (type === 'shelf') {
-        const cabinet = findCabinet();
-        const current = cabinet?.shelves?.find(shelf => shelf.id === entityId);
-        if (!current) return showToast('Полка больше не существует', 'error');
+        const found = findShelfByIdGlobal(entityId);
+        if (!found) return showToast('Полка больше не существует', 'error');
         const lengthCm = positiveNumber(data.lengthCm, NaN);
         const heightCm = positiveNumber(data.heightCm, NaN);
         const depthCm = positiveNumber(data.depthCm, NaN);
         if (![lengthCm, heightCm, depthCm].every(Number.isFinite)) {
           return showToast('Размеры полки должны быть больше нуля', 'error');
         }
-        current.name = String(data.name).trim();
-        current.lengthCm = lengthCm;
-        current.heightCm = heightCm;
-        current.depthCm = depthCm;
-        current.updatedAt = now();
+        found.shelf.name = String(data.name).trim();
+        found.shelf.lengthCm = lengthCm;
+        found.shelf.heightCm = heightCm;
+        found.shelf.depthCm = depthCm;
+        found.shelf.updatedAt = now();
       } else {
-        const collections = {
-          library: state.libraries,
-          room: lib()?.rooms,
-          cabinet: findRoom()?.cabinets
-        };
-        const collection = collections[type];
-        const current = collection?.find(item => item.id === entityId);
+        let current = null;
+        if (type === 'library') current = state.libraries.find(item => item.id === entityId);
+        if (type === 'room') current = findRoomById(entityId);
+        if (type === 'cabinet') current = findCabinetById(entityId);
         if (!current) return showToast('Элемент больше не существует', 'error');
         current.name = String(data.name).trim();
         current.updatedAt = now();
@@ -123,38 +153,43 @@ export function deleteEntityWithConfirm(entity, type) {
           removed = true;
         }
       } else if (type === 'room') {
-        const library = lib();
-        const idx = library?.rooms?.findIndex(room => room.id === entityId) ?? -1;
-        if (library && idx !== -1) {
-          library.rooms.splice(idx, 1);
-          ui.step = 'rooms';
-          ui.roomId = library.id;
-          ui.roomId = null;
-          ui.cabinetId = null;
-          ui.shelfId = null;
-          removed = true;
+        for (const library of state.libraries) {
+          const idx = (library.rooms || []).findIndex(room => room.id === entityId);
+          if (idx !== -1) {
+            library.rooms.splice(idx, 1);
+            ui.step = 'rooms';
+            ui.roomId = null;
+            ui.cabinetId = null;
+            ui.shelfId = null;
+            removed = true;
+            break;
+          }
         }
       } else if (type === 'cabinet') {
-        const room = findRoom();
-        const idx = room?.cabinets?.findIndex(cabinet => cabinet.id === entityId) ?? -1;
-        if (room && idx !== -1) {
-          room.cabinets.splice(idx, 1);
-          ui.step = 'cabinets';
-          ui.cabinetId = null;
-          ui.shelfId = null;
-          removed = true;
+        const room = findRoomByIdForEntity(entityId);
+        if (room) {
+          const idx = room.cabinets.findIndex(cabinet => cabinet.id === entityId);
+          if (idx !== -1) {
+            room.cabinets.splice(idx, 1);
+            ui.step = 'cabinets';
+            ui.cabinetId = null;
+            ui.shelfId = null;
+            removed = true;
+          }
         }
       } else if (type === 'shelf') {
-        const cabinet = findCabinet();
-        const idx = cabinet?.shelves?.findIndex(shelf => shelf.id === entityId) ?? -1;
-        if (cabinet && idx !== -1) {
-          cabinet.shelves.splice(idx, 1);
-          ui.step = 'shelves';
-          ui.shelfId = null;
-          removed = true;
+        const found = findShelfByIdGlobal(entityId);
+        if (found) {
+          const idx = found.cabinet.shelves.findIndex(shelf => shelf.id === entityId);
+          if (idx !== -1) {
+            found.cabinet.shelves.splice(idx, 1);
+            ui.step = 'shelves';
+            ui.shelfId = null;
+            removed = true;
+          }
         }
       } else if (type === 'book') {
-        const found = findBookById(entityId);
+        const found = findBookByIdGlobal(entityId);
         if (found) {
           const idx = found.shelf.books.findIndex(book => book.id === entityId);
           if (idx !== -1) {
@@ -171,4 +206,12 @@ export function deleteEntityWithConfirm(entity, type) {
       }
     }
   });
+}
+
+function findRoomByIdForEntity(entityId) {
+  for (const library of state.libraries) {
+    const room = (library.rooms || []).find(item => (item.cabinets || []).some(cabinet => cabinet.id === entityId));
+    if (room) return room;
+  }
+  return null;
 }
