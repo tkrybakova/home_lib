@@ -1,21 +1,20 @@
-import { state, findRoom, persist } from '../state.js';
+import { state, persist } from '../state.js';
 import { showModal } from '../modal.js';
 import { render } from '../renderMain.js';
 import { createCabinet } from '../factories.js';
 import { showToast } from '../toast.js';
 
-function findRoomById(roomId) {
-  for (const library of state.libraries) {
-    const room = (library.rooms || []).find(item => item.id === roomId);
-    if (room) return room;
-  }
-  return null;
+function findRoomById(roomId, libraryId) {
+  const library = state.libraries.find(item => item.id === libraryId);
+  return library?.rooms?.find(item => item.id === roomId) || null;
 }
 
 export function addCabinet() {
-  const room = findRoom();
-  const roomId = room?.id;
-  if (!roomId) return showToast('Сначала выберите помещение', 'error');
+  const libraryId = state.activeLibraryId;
+  const roomId = globalThis.ui?.roomId;
+  const library = state.libraries.find(item => item.id === libraryId);
+  const room = library?.rooms?.find(item => item.id === roomId);
+  if (!roomId || !room) return showToast('Сначала выберите помещение', 'error');
 
   showModal('edit', {
     title: 'Новый шкаф',
@@ -23,9 +22,17 @@ export function addCabinet() {
       { key: 'name', label: 'Название шкафа', type: 'text', placeholder: 'Книжный шкаф', required: true }
     ],
     onSave: (data) => {
-      const targetRoom = findRoomById(roomId);
-      if (!targetRoom) return showToast('Помещение больше не существует', 'error');
-      targetRoom.cabinets.push(createCabinet(data.name));
+      const targetRoom = findRoomById(roomId, libraryId);
+      if (!targetRoom) {
+        showToast('Помещение больше не существует в выбранной библиотеке', 'error');
+        return false;
+      }
+      const name = String(data.name || '').trim();
+      if (!name) {
+        showToast('Введите название шкафа', 'error');
+        return false;
+      }
+      targetRoom.cabinets.push(createCabinet(name));
       persist();
       render();
     }
