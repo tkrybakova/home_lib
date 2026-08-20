@@ -1,4 +1,4 @@
-import { state, ui, persist, lib } from '../state.js';
+import { state, ui, persist } from '../state.js';
 import { showModal } from '../modal.js';
 import { render } from '../renderMain.js';
 import { now, normalizeIsbn, isValidIsbn } from '../utils.js';
@@ -73,17 +73,10 @@ export function editEntity(entity, type) {
       { key: 'heightCm', label: 'Высота (см)', type: 'number', value: entity.heightCm, required: true },
       { key: 'depthCm', label: 'Глубина (см)', type: 'number', value: entity.depthCm, required: true }
     );
-  } else if (type === 'library') {
-    title = 'Редактировать библиотеку';
-    fields.push({ key: 'name', label: 'Название', type: 'text', value: entity.name, required: true });
-  } else if (type === 'room') {
-    title = 'Редактировать помещение';
-    fields.push({ key: 'name', label: 'Название', type: 'text', value: entity.name, required: true });
-  } else if (type === 'cabinet') {
-    title = 'Редактировать шкаф';
-    fields.push({ key: 'name', label: 'Название', type: 'text', value: entity.name, required: true });
   } else {
-    fields.push({ key: 'name', label: 'Название', type: 'text', value: entity.name || entity.title, required: true });
+    const labels = { library: 'библиотеку', room: 'помещение', cabinet: 'шкаф' };
+    title = `Редактировать ${labels[type] || 'элемент'}`;
+    fields.push({ key: 'name', label: 'Название', type: 'text', value: entity.name, required: true });
   }
 
   const entityId = entity.id;
@@ -96,7 +89,7 @@ export function editEntity(entity, type) {
         if (!found) return showToast('Книга больше не существует', 'error');
         const isbn = normalizeIsbn(data.isbn);
         if (isbn && !isValidIsbn(isbn)) return showToast('Некорректный ISBN', 'error');
-        found.book.title = String(data.title).trim();
+        found.book.title = String(data.title || '').trim();
         found.book.author = String(data.author || '').trim();
         found.book.isbn = isbn;
         found.book.description = String(data.description || '').trim();
@@ -110,7 +103,7 @@ export function editEntity(entity, type) {
         if (![lengthCm, heightCm, depthCm].every(Number.isFinite)) {
           return showToast('Размеры полки должны быть больше нуля', 'error');
         }
-        found.shelf.name = String(data.name).trim();
+        found.shelf.name = String(data.name || '').trim();
         found.shelf.lengthCm = lengthCm;
         found.shelf.heightCm = heightCm;
         found.shelf.depthCm = depthCm;
@@ -121,7 +114,9 @@ export function editEntity(entity, type) {
         if (type === 'room') current = findRoomById(entityId);
         if (type === 'cabinet') current = findCabinetById(entityId);
         if (!current) return showToast('Элемент больше не существует', 'error');
-        current.name = String(data.name).trim();
+        const name = String(data.name || '').trim();
+        if (!name) return showToast('Название не может быть пустым', 'error');
+        current.name = name;
         current.updatedAt = now();
       }
       persist();
@@ -144,7 +139,7 @@ export function deleteEntityWithConfirm(entity, type) {
         const idx = state.libraries.findIndex(library => library.id === entityId);
         if (idx !== -1) {
           state.libraries.splice(idx, 1);
-          if (state.activeLibraryId === entityId) state.activeLibraryId = null;
+          if (state.activeLibraryId === entityId) state.activeLibraryId = state.libraries[0]?.id || null;
           ui.step = 'libraries';
           ui.libraryId = state.activeLibraryId;
           ui.roomId = null;
@@ -157,10 +152,12 @@ export function deleteEntityWithConfirm(entity, type) {
           const idx = (library.rooms || []).findIndex(room => room.id === entityId);
           if (idx !== -1) {
             library.rooms.splice(idx, 1);
-            ui.step = 'rooms';
-            ui.roomId = null;
-            ui.cabinetId = null;
-            ui.shelfId = null;
+            if (state.activeLibraryId === library.id) {
+              ui.step = 'rooms';
+              ui.roomId = null;
+              ui.cabinetId = null;
+              ui.shelfId = null;
+            }
             removed = true;
             break;
           }
@@ -168,7 +165,7 @@ export function deleteEntityWithConfirm(entity, type) {
       } else if (type === 'cabinet') {
         const room = findRoomByIdForEntity(entityId);
         if (room) {
-          const idx = room.cabinets.findIndex(cabinet => cabinet.id === entityId);
+          const idx = (room.cabinets || []).findIndex(cabinet => cabinet.id === entityId);
           if (idx !== -1) {
             room.cabinets.splice(idx, 1);
             ui.step = 'cabinets';
