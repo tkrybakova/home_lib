@@ -18,7 +18,7 @@ export function initEvents() {
   eventsInitialized = true;
 
   app.addEventListener('click', e => {
-    const bookEl = e.target.closest('.book-card');
+    const bookEl = e.target.closest('.book, .book-card');
     if (bookEl && !e.target.closest('button')) {
       const bookId = bookEl.dataset.bookId;
       const cabinet = findCabinet();
@@ -35,7 +35,7 @@ export function initEvents() {
     }
 
     const container = e.target.closest('.books-container');
-    if (container && !e.target.closest('.book-card')) {
+    if (container && !e.target.closest('.book, .book-card')) {
       const shelfId = container.dataset.shelfId;
       if (shelfId) addBook(shelfId);
       return;
