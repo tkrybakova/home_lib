@@ -8,25 +8,23 @@ import { addShelf } from './actions/shelfActions.js';
 import { addBook, addBookByIsbn } from './actions/bookActions.js';
 import { editEntity, deleteEntityWithConfirm } from './actions/entityActions.js';
 
-/**
- * Инициализация всех обработчиков событий интерфейса.
- * Навешивает делегированные клики по кнопкам и элементам, а также закрытие по Escape.
- */
+let eventsInitialized = false;
+
 export function initEvents() {
+  if (eventsInitialized) return;
+
   const app = document.querySelector('#app');
+  if (!app) throw new Error('Application root #app not found');
+  eventsInitialized = true;
 
-  // Делегирование кликов внутри #app
   app.addEventListener('click', e => {
-
-    // === Открытие деталей книги при клике на саму книгу (не на кнопку) ===
     const bookEl = e.target.closest('.book');
     if (bookEl && !e.target.closest('button')) {
       const bookId = bookEl.dataset.bookId;
       const cabinet = findCabinet();
-
       if (cabinet) {
-        for (const shelf of cabinet.shelves) {
-          const book = shelf.books.find(b => b.id === bookId);
+        for (const shelf of cabinet.shelves || []) {
+          const book = (shelf.books || []).find(item => item.id === bookId);
           if (book) {
             showModal('book-details', {
               book,
@@ -38,25 +36,18 @@ export function initEvents() {
       }
     }
 
-    // === Клик по пустой области контейнера книг → добавить книгу на эту полку ===
     const container = e.target.closest('.books-container');
     if (container && !e.target.closest('.book')) {
       const shelfId = container.dataset.shelfId;
-      if (shelfId) {
-        addBook(shelfId);
-      }
+      if (shelfId) addBook(shelfId);
       return;
     }
 
-    // === Обработка нажатий на любые кнопки ===
     const btn = e.target.closest('button');
     if (!btn) return;
-
     const { action, id, type, shelfId } = btn.dataset;
 
     switch (action) {
-
-      // ---------- Навигация «Назад» ----------
       case 'back':
         switch (ui.step) {
           case 'books':
@@ -73,8 +64,6 @@ export function initEvents() {
             break;
         }
         break;
-
-      // ---------- Добавление сущностей ----------
       case 'add-library':
         addLibrary();
         break;
@@ -96,67 +85,49 @@ export function initEvents() {
       case 'add-book-to-shelf':
         addBook(shelfId);
         break;
-
-      // ---------- Открытие/переход в сущность ----------
       case 'open-library':
+        if (!state.libraries.some(library => library.id === id)) break;
         state.activeLibraryId = id;
         persist();
         go('rooms');
         break;
       case 'open-room':
-        go('cabinets', { roomId: id });
+        if (id) go('cabinets', { roomId: id });
         break;
       case 'open-cabinet':
-        go('shelves', { roomId: ui.roomId, cabinetId: id });
+        if (id) go('shelves', { roomId: ui.roomId, cabinetId: id });
         break;
       case 'open-shelf':
-        go('books', { roomId: ui.roomId, cabinetId: ui.cabinetId, shelfId: id });
+        if (id) go('books', { roomId: ui.roomId, cabinetId: ui.cabinetId, shelfId: id });
         break;
-
-      // ---------- Редактирование/удаление родительского элемента (библиотека, комната, шкаф) ----------
       case 'edit-parent': {
         const entity = getParentEntity();
-        if (entity) {
-          editEntity(entity, type);
-        }
+        if (entity) editEntity(entity, type);
         break;
       }
       case 'delete-parent': {
         const entity = getParentEntity();
-        if (entity) {
-          deleteEntityWithConfirm(entity, type);
-        }
+        if (entity) deleteEntityWithConfirm(entity, type);
         break;
       }
-
-      // ---------- Редактирование/удаление полки ----------
       case 'edit-shelf': {
         const cabinet = findCabinet();
-        if (!cabinet) break;
-        const shelf = cabinet.shelves.find(s => s.id === id);
-        if (shelf) {
-          editEntity(shelf, 'shelf');
-        }
+        const shelf = cabinet?.shelves?.find(item => item.id === id);
+        if (shelf) editEntity(shelf, 'shelf');
         break;
       }
       case 'delete-shelf': {
         const cabinet = findCabinet();
-        if (!cabinet) break;
-        const shelf = cabinet.shelves.find(s => s.id === id);
-        if (shelf) {
-          deleteEntityWithConfirm(shelf, 'shelf');
-        }
+        const shelf = cabinet?.shelves?.find(item => item.id === id);
+        if (shelf) deleteEntityWithConfirm(shelf, 'shelf');
         break;
       }
-
-      // ---------- Редактирование/удаление книги ----------
       case 'edit-book': {
         const cabinet = findCabinet();
-        if (!cabinet) break;
-        for (const shelf of cabinet.shelves) {
-          const book = shelf.books.find(b => b.id === id);
+        for (const shelf of cabinet?.shelves || []) {
+          const book = (shelf.books || []).find(item => item.id === id);
           if (book) {
-            closeModal();         // закрываем модалку с деталями, если открыта
+            closeModal();
             editEntity(book, 'book');
             return;
           }
@@ -165,9 +136,8 @@ export function initEvents() {
       }
       case 'delete-book': {
         const cabinet = findCabinet();
-        if (!cabinet) break;
-        for (const shelf of cabinet.shelves) {
-          const book = shelf.books.find(b => b.id === id);
+        for (const shelf of cabinet?.shelves || []) {
+          const book = (shelf.books || []).find(item => item.id === id);
           if (book) {
             deleteEntityWithConfirm(book, 'book');
             return;
@@ -178,10 +148,7 @@ export function initEvents() {
     }
   });
 
-  // Закрытие любого модального окна по клавише Escape
   document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') {
-      closeModal();
-    }
-  });
+    if (e.key === 'Escape') closeModal();
+  }, { once: false });
 }
