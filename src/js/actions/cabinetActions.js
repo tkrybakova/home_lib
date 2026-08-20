@@ -1,8 +1,16 @@
-import { findRoom, persist } from '../state.js';
+import { state, findRoom, persist } from '../state.js';
 import { showModal } from '../modal.js';
 import { render } from '../renderMain.js';
 import { createCabinet } from '../factories.js';
 import { showToast } from '../toast.js';
+
+function findRoomById(roomId) {
+  for (const library of state.libraries) {
+    const room = (library.rooms || []).find(item => item.id === roomId);
+    if (room) return room;
+  }
+  return null;
+}
 
 export function addCabinet() {
   const room = findRoom();
@@ -15,17 +23,11 @@ export function addCabinet() {
       { key: 'name', label: 'Название шкафа', type: 'text', placeholder: 'Книжный шкаф', required: true }
     ],
     onSave: (data) => {
-      const libraryRoom = findRoomById(roomId);
-      if (!libraryRoom) return showToast('Помещение больше не существует', 'error');
-      libraryRoom.cabinets.push(createCabinet(data.name));
+      const targetRoom = findRoomById(roomId);
+      if (!targetRoom) return showToast('Помещение больше не существует', 'error');
+      targetRoom.cabinets.push(createCabinet(data.name));
       persist();
       render();
     }
   });
-}
-
-function findRoomById(roomId) {
-  const libraryRoom = findRoom();
-  if (libraryRoom?.id === roomId) return libraryRoom;
-  return null;
 }
