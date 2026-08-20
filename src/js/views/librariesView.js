@@ -1,11 +1,6 @@
 import { state } from '../state.js';
 import { esc } from '../utils.js';
 
-/**
- * Отрисовывает список библиотек в виде визуальной схемы (узлы с картинками).
- * При отсутствии библиотек — приглашение создать первую.
- * Изображения загружаются из /img/library.png (можно заменить на кастомные позже).
- */
 export function renderLibraries() {
   if (!state.libraries.length) {
     return `
@@ -14,13 +9,11 @@ export function renderLibraries() {
     `;
   }
 
-  // Узлы существующих библиотек
   const libraryNodes = state.libraries.map(l => `
-    <div class="library-node" data-id="${l.id}">
-      <button class="library-card" data-action="open-library" data-id="${l.id}">
+    <div class="library-node" data-id="${esc(l.id)}">
+      <button class="library-card" data-action="open-library" data-id="${esc(l.id)}">
         <div class="library-image-placeholder">
-          <!-- Используем общее изображение библиотеки, пока нет кастомных -->
-          <img src="/img/library.png" alt="${esc(l.name)}" class="library-image" />
+          <img src="/library.png" alt="${esc(l.name)}" class="library-image" />
         </div>
         <div class="library-name">${esc(l.name)}</div>
         <div class="library-badge">${l.rooms?.length || 0} помещений</div>
@@ -28,7 +21,6 @@ export function renderLibraries() {
     </div>
   `).join('');
 
-  // Узел "Новая библиотека" с особым стилем
   const newLibraryNode = `
     <div class="library-node new-library">
       <button class="library-card add-card" data-action="add-library">
@@ -45,7 +37,6 @@ export function renderLibraries() {
       ${libraryNodes}
       ${newLibraryNode}
       <svg class="svg-lines">
-        <!-- Динамические линии соединений будут сгенерированы после рендера -->
         <path class="dashed-line" d="M 250 350 C 380 250, 450 300, 550 190" />
         <path class="dashed-line" d="M 300 450 C 420 550, 500 480, 580 550" />
       </svg>
