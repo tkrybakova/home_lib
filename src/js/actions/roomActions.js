@@ -1,14 +1,12 @@
-import { lib, persist, findRoom } from '../state.js';
+import { state, lib, persist } from '../state.js';
 import { showModal } from '../modal.js';
 import { render } from '../renderMain.js';
 import { createRoom } from '../factories.js';
 import { showToast } from '../toast.js';
 
-/**
- * Добавление нового помещения в текущую библиотеку.
- */
 export function addRoom() {
-  const library = lib();
+  const libraryId = state.activeLibraryId;
+  const library = state.libraries.find(item => item.id === libraryId);
   if (!library) return showToast('Сначала создайте библиотеку', 'error');
 
   showModal('edit', {
@@ -17,7 +15,9 @@ export function addRoom() {
       { key: 'name', label: 'Название помещения', type: 'text', placeholder: 'Гостиная', required: true }
     ],
     onSave: (data) => {
-      library.rooms.push(createRoom(data.name));
+      const targetLibrary = state.libraries.find(item => item.id === libraryId);
+      if (!targetLibrary) return showToast('Библиотека больше не существует', 'error');
+      targetLibrary.rooms.push(createRoom(data.name));
       persist();
       render();
     }
