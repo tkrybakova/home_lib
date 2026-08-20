@@ -1,5 +1,18 @@
+function getApiBaseUrl() {
+  const configured = globalThis.HOME_LIB_API_URL;
+  if (configured) return String(configured).replace(/\/$/, '');
+
+  // Local development normally serves the static app and API on different ports.
+  if (globalThis.location?.hostname === 'localhost' || globalThis.location?.hostname === '127.0.0.1') {
+    return 'http://localhost:8787';
+  }
+
+  // Production should reverse-proxy the API under the same origin.
+  return '';
+}
+
 export async function fetchBookByIsbn(isbn) {
-  const API_URL = 'http://localhost:8787/book/isbn/';
+  const API_URL = getApiBaseUrl();
 
   try {
     const cleanIsbn = isbn.replace(/[^0-9Xx]/g, '').toUpperCase();
@@ -9,7 +22,7 @@ export async function fetchBookByIsbn(isbn) {
     }
 
     const response = await fetch(
-      `${API_URL}${encodeURIComponent(cleanIsbn)}`
+      `${API_URL}/book/isbn/${encodeURIComponent(cleanIsbn)}`
     );
 
     if (response.status === 404) {
