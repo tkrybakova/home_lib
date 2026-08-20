@@ -1,4 +1,4 @@
-import { state, persist } from '../state.js';
+import { state, ui, persist } from '../state.js';
 import { showModal } from '../modal.js';
 import { render } from '../renderMain.js';
 import { createCabinet } from '../factories.js';
@@ -11,7 +11,7 @@ function findRoomById(roomId, libraryId) {
 
 export function addCabinet() {
   const libraryId = state.activeLibraryId;
-  const roomId = globalThis.ui?.roomId;
+  const roomId = ui.roomId;
   const library = state.libraries.find(item => item.id === libraryId);
   const room = library?.rooms?.find(item => item.id === roomId);
   if (!roomId || !room) return showToast('Сначала выберите помещение', 'error');
