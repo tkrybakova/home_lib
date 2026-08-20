@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "node scripts/static-server.mjs",
-    "build": "node scripts/check-conflicts.mjs && node --check src/main.js && node --check sw.js && node --check scripts/static-server.mjs && node --check scripts/start.mjs && node --check server/api.mjs && node --check server/services/resolver.mjs && node --check server/cache.mjs && node --check server/index.js && node --check server/services/livelib.mjs && node --check server/services/isbnsearch.mjs && node --check server/services/isbndb.mjs && node validate-manifest.mjs",
+    "build": "node scripts/check-conflicts.mjs && node scripts/check-js.mjs && node validate-manifest.mjs",
     "preview": "node scripts/static-server.mjs 4173",
     "api": "node server/api.mjs 8787",
     "start": "node scripts/start.mjs"
