@@ -1,12 +1,6 @@
 import { findCabinet } from '../state.js';
 import { esc } from '../utils.js';
 
-/**
- * Преобразует массив книг в HTML-разметку для визуального представления на полке.
- * Учитывает тип книги (вертикальная, горизонтальная стопка) и наклон.
- * @param {Array} books - массив книг с полями visual
- * @returns {string} HTML
- */
 function renderBooksHTML(books) {
   let html = '';
   let i = 0;
@@ -18,16 +12,16 @@ function renderBooksHTML(books) {
     if (visual.type === 'horizontal') {
       html += '<div class="horizontal-stack">';
       while (i < books.length && books[i].visual && books[i].visual.type === 'horizontal') {
-        const b = books[i];
-        const v = b.visual;
-        const stackColor = Math.abs(hashString(`${b.id}-${b.title}`)) % 12;
+        const current = books[i];
+        const currentVisual = current.visual;
+        const stackColor = Math.abs(hashString(`${current.id}-${current.title}`)) % 12;
         html += `
           <div
             class="book hardback-book horizontal"
-            style="height:${v.height}px;width:${v.width}px;"
-            data-book-id="${b.id}"
+            style="height:${safeDimension(currentVisual.height, 12)}px;width:${safeDimension(currentVisual.width, 40)}px;"
+            data-book-id="${esc(current.id)}"
             data-color="${stackColor}"
-            title="${esc(b.title)}"
+            title="${esc(current.title)}"
           >
             <span class="book-shine"></span>
           </div>
@@ -36,13 +30,12 @@ function renderBooksHTML(books) {
       }
       html += '</div>';
     } else {
-      const v = visual;
-      const leanClass = v.lean ? ` lean-${v.lean}` : '';
+      const leanClass = visual.lean === 'left' || visual.lean === 'right' ? ` lean-${visual.lean}` : '';
       html += `
         <div
           class="book hardback-book upright${leanClass}"
-          style="height:${v.height}px;width:${Math.max(v.width, 26)}px;"
-          data-book-id="${book.id}"
+          style="height:${safeDimension(visual.height, 200)}px;width:${Math.max(safeDimension(visual.width, 26), 26)}px;"
+          data-book-id="${esc(book.id)}"
           data-color="${color}"
           title="${esc(book.title)}"
         >
@@ -59,13 +52,9 @@ function renderBooksHTML(books) {
   return html;
 }
 
-/**
- * Отрисовывает полки текущего шкафа с книгами на них.
- * Каждая полка отображается как блок с заголовком, кнопками управления и контейнером книг.
- */
 export function renderShelves() {
   const cabinet = findCabinet();
-  if (!cabinet) return `<div class="empty-state"><p>Шкаф не выбран</p></div>`;
+  if (!cabinet) return '<div class="empty-state"><p>Шкаф не выбран</p></div>';
 
   const shelves = cabinet.shelves || [];
   if (!shelves.length) {
@@ -76,40 +65,38 @@ export function renderShelves() {
   }
 
   const totalBooks = shelves.reduce((sum, shelf) => sum + (shelf.books?.length || 0), 0);
-
   let html = `
     <section class="hardback-stage" aria-label="Интерактивный книжный шкаф">
       <div class="hardback-stage__copy">
         <span class="stage-badge">✦ Hardback · Interactive shelf</span>
         <h2>Живой шкаф «${esc(cabinet.name)}»</h2>
-        <p>Наводите на корешки и открывайте книги прямо с полки. Интерфейс вдохновлён премиальным 3D bookshelf-блоком, но использует ваши реальные данные.</p>
+        <p>Наводите на корешки и открывайте книги прямо с полки. Интерфейс использует ваши реальные данные.</p>
       </div>
       <div class="hardback-stage__stats" aria-label="Статистика шкафа">
         <span><strong>${shelves.length}</strong> ${declOfNum(shelves.length, ['полка', 'полки', 'полок'])}</span>
         <span><strong>${totalBooks}</strong> ${declOfNum(totalBooks, ['книга', 'книги', 'книг'])}</span>
       </div>
     </section>
-
     <button class="add-btn" data-action="add-shelf">➕ Новая полка</button>
   `;
 
   shelves.forEach(shelf => {
     const books = shelf.books || [];
     html += `
-      <div class="shelf" data-shelf-id="${shelf.id}">
+      <div class="shelf" data-shelf-id="${esc(shelf.id)}">
         <div class="shelf-header">
-          <button class="shelf-title" data-action="open-shelf" data-id="${shelf.id}">
+          <button class="shelf-title" data-action="open-shelf" data-id="${esc(shelf.id)}">
             <span>${esc(shelf.name)}</span>
-            <small>${books.length} книг · ${shelf.lengthCm}×${shelf.heightCm}×${shelf.depthCm} см</small>
+            <small>${books.length} ${declOfNum(books.length, ['книга', 'книги', 'книг'])} · ${esc(shelf.lengthCm)}×${esc(shelf.heightCm)}×${esc(shelf.depthCm)} см</small>
           </button>
           <div class="shelf-actions">
-            <button title="Открыть полку" data-action="open-shelf" data-id="${shelf.id}">📖</button>
-            <button title="Редактировать полку" data-action="edit-shelf" data-id="${shelf.id}">✏️</button>
-            <button title="Добавить книгу" class="btn-add-book" data-action="add-book-to-shelf" data-shelf-id="${shelf.id}">+</button>
-            <button title="Удалить полку" class="btn-remove" data-action="delete-shelf" data-id="${shelf.id}">×</button>
+            <button title="Открыть полку" data-action="open-shelf" data-id="${esc(shelf.id)}">📖</button>
+            <button title="Редактировать полку" data-action="edit-shelf" data-id="${esc(shelf.id)}">✏️</button>
+            <button title="Добавить книгу" class="btn-add-book" data-action="add-book-to-shelf" data-shelf-id="${esc(shelf.id)}">+</button>
+            <button title="Удалить полку" class="btn-remove" data-action="delete-shelf" data-id="${esc(shelf.id)}">×</button>
           </div>
         </div>
-        <div class="books-container hardback-bookshelf" data-shelf-id="${shelf.id}">
+        <div class="books-container hardback-bookshelf" data-shelf-id="${esc(shelf.id)}">
           ${books.length ? renderBooksHTML(books) : ''}
         </div>
         ${books.length ? `
@@ -122,6 +109,11 @@ export function renderShelves() {
   });
 
   return html;
+}
+
+function safeDimension(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 && number <= 1000 ? number : fallback;
 }
 
 function hashString(value = '') {
