@@ -3,9 +3,7 @@ import { esc } from '../utils.js';
 
 export function renderBooks() {
   const shelf = findShelf();
-  if (!shelf) {
-    return `<div class="empty-state"><div class="empty-icon">LIBRARY</div><h3>Полка не выбрана</h3><p>Выберите или создайте полку, чтобы управлять книгами</p></div>`;
-  }
+  if (!shelf) return `<div class="empty-state"><div class="empty-icon">LIBRARY</div><h3>Полка не выбрана</h3><p>Выберите или создайте полку, чтобы управлять книгами</p></div>`;
   const books = shelf.books || [];
   return `
     <div class="books-actions">
@@ -17,7 +15,7 @@ export function renderBooks() {
     <div class="books-grid">
       ${books.map((book, index) => `
         <article class="book-card" data-book-id="${esc(book.id)}">
-          <div class="book-cover-frame">
+          <div class="book-cover-frame${book.coverUrl ? '' : ' is-missing'}">
             ${book.coverUrl ? `<img class="book-cover" src="${esc(book.coverUrl)}" alt="Обложка «${esc(book.title)}»" loading="lazy" onerror="this.parentElement.classList.add('is-missing');this.remove();">` : ''}
             <div class="book-cover-fallback"><span>${String(index + 1).padStart(2, '0')}</span><strong>${esc(book.title)}</strong></div>
           </div>
