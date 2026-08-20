@@ -1,20 +1,28 @@
 import { state, ui, persist, lib, findRoom, findCabinet } from '../state.js';
 import { showModal } from '../modal.js';
 import { render } from '../renderMain.js';
-import { now } from '../utils.js';
+import { now, normalizeIsbn, isValidIsbn } from '../utils.js';
 import { showToast } from '../toast.js';
 
-/**
- * Универсальное редактирование сущности (книги, полки, библиотеки, комнаты, шкафа).
- * Отображает модальное окно с полями, соответствующими типу.
- * @param {object} entity – объект сущности
- * @param {string} type   – 'book' | 'shelf' | 'library' | 'room' | 'cabinet'
- */
+function positiveNumber(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : fallback;
+}
+
+function findBookById(bookId) {
+  const cabinet = findCabinet();
+  if (!cabinet) return null;
+  for (const shelf of cabinet.shelves || []) {
+    const book = (shelf.books || []).find(item => item.id === bookId);
+    if (book) return { shelf, book };
+  }
+  return null;
+}
+
 export function editEntity(entity, type) {
   const fields = [];
   let title = 'Редактировать';
 
-  // Формируем поля в зависимости от типа
   if (type === 'book') {
     title = 'Редактировать книгу';
     fields.push(
@@ -41,29 +49,51 @@ export function editEntity(entity, type) {
     title = 'Редактировать шкаф';
     fields.push({ key: 'name', label: 'Название', type: 'text', value: entity.name, required: true });
   } else {
-    // fallback для неизвестного типа
     fields.push({ key: 'name', label: 'Название', type: 'text', value: entity.name || entity.title, required: true });
   }
 
+  const entityId = entity.id;
   showModal('edit', {
     title,
     fields,
     onSave: (data) => {
-      // Обновляем свойства сущности
       if (type === 'book') {
-        entity.title = data.title;
-        entity.author = data.author || '';
-        entity.isbn = data.isbn || '';
-        entity.description = data.description || '';
+        const found = findBookById(entityId);
+        if (!found) return showToast('Книга больше не существует', 'error');
+        const isbn = normalizeIsbn(data.isbn);
+        if (isbn && !isValidIsbn(isbn)) return showToast('Некорректный ISBN', 'error');
+        found.book.title = String(data.title).trim();
+        found.book.author = String(data.author || '').trim();
+        found.book.isbn = isbn;
+        found.book.description = String(data.description || '').trim();
+        found.book.updatedAt = now();
       } else if (type === 'shelf') {
-        entity.name = data.name;
-        entity.lengthCm = Number(data.lengthCm) || 100;
-        entity.heightCm = Number(data.heightCm) || 30;
-        entity.depthCm = Number(data.depthCm) || 40;
+        const cabinet = findCabinet();
+        const current = cabinet?.shelves?.find(shelf => shelf.id === entityId);
+        if (!current) return showToast('Полка больше не существует', 'error');
+        const lengthCm = positiveNumber(data.lengthCm, NaN);
+        const heightCm = positiveNumber(data.heightCm, NaN);
+        const depthCm = positiveNumber(data.depthCm, NaN);
+        if (![lengthCm, heightCm, depthCm].every(Number.isFinite)) {
+          return showToast('Размеры полки должны быть больше нуля', 'error');
+        }
+        current.name = String(data.name).trim();
+        current.lengthCm = lengthCm;
+        current.heightCm = heightCm;
+        current.depthCm = depthCm;
+        current.updatedAt = now();
       } else {
-        entity.name = data.name;
+        const collections = {
+          library: state.libraries,
+          room: lib()?.rooms,
+          cabinet: findRoom()?.cabinets
+        };
+        const collection = collections[type];
+        const current = collection?.find(item => item.id === entityId);
+        if (!current) return showToast('Элемент больше не существует', 'error');
+        current.name = String(data.name).trim();
+        current.updatedAt = now();
       }
-      entity.updatedAt = now();
       persist();
       render();
       showToast('Сохранено', 'success');
@@ -71,14 +101,9 @@ export function editEntity(entity, type) {
   });
 }
 
-/**
- * Удаление сущности с подтверждением.
- * В зависимости от типа корректирует навигацию (ui.step) и удаляет из родительского массива.
- * @param {object} entity – удаляемый объект
- * @param {string} type   – 'library' | 'room' | 'cabinet' | 'shelf' | 'book'
- */
 export function deleteEntityWithConfirm(entity, type) {
   const name = entity.name || entity.title || 'элемент';
+  const entityId = entity.id;
   showModal('confirm', {
     title: 'Подтверждение удаления',
     message: `Удалить «${name}»?`,
@@ -86,11 +111,12 @@ export function deleteEntityWithConfirm(entity, type) {
       let removed = false;
 
       if (type === 'library') {
-        const idx = state.libraries.findIndex(l => l.id === entity.id);
+        const idx = state.libraries.findIndex(library => library.id === entityId);
         if (idx !== -1) {
           state.libraries.splice(idx, 1);
-          if (state.activeLibraryId === entity.id) state.activeLibraryId = null;
+          if (state.activeLibraryId === entityId) state.activeLibraryId = null;
           ui.step = 'libraries';
+          ui.libraryId = state.activeLibraryId;
           ui.roomId = null;
           ui.cabinetId = null;
           ui.shelfId = null;
@@ -98,50 +124,42 @@ export function deleteEntityWithConfirm(entity, type) {
         }
       } else if (type === 'room') {
         const library = lib();
-        if (library) {
-          const idx = library.rooms.findIndex(r => r.id === entity.id);
-          if (idx !== -1) {
-            library.rooms.splice(idx, 1);
-            ui.step = 'rooms';
-            ui.roomId = null;
-            ui.cabinetId = null;
-            ui.shelfId = null;
-            removed = true;
-          }
+        const idx = library?.rooms?.findIndex(room => room.id === entityId) ?? -1;
+        if (library && idx !== -1) {
+          library.rooms.splice(idx, 1);
+          ui.step = 'rooms';
+          ui.roomId = library.id;
+          ui.roomId = null;
+          ui.cabinetId = null;
+          ui.shelfId = null;
+          removed = true;
         }
       } else if (type === 'cabinet') {
         const room = findRoom();
-        if (room) {
-          const idx = room.cabinets.findIndex(c => c.id === entity.id);
-          if (idx !== -1) {
-            room.cabinets.splice(idx, 1);
-            ui.step = 'cabinets';
-            ui.cabinetId = null;
-            ui.shelfId = null;
-            removed = true;
-          }
+        const idx = room?.cabinets?.findIndex(cabinet => cabinet.id === entityId) ?? -1;
+        if (room && idx !== -1) {
+          room.cabinets.splice(idx, 1);
+          ui.step = 'cabinets';
+          ui.cabinetId = null;
+          ui.shelfId = null;
+          removed = true;
         }
       } else if (type === 'shelf') {
         const cabinet = findCabinet();
-        if (cabinet) {
-          const idx = cabinet.shelves.findIndex(s => s.id === entity.id);
-          if (idx !== -1) {
-            cabinet.shelves.splice(idx, 1);
-            ui.step = 'shelves';
-            ui.shelfId = null;
-            removed = true;
-          }
+        const idx = cabinet?.shelves?.findIndex(shelf => shelf.id === entityId) ?? -1;
+        if (cabinet && idx !== -1) {
+          cabinet.shelves.splice(idx, 1);
+          ui.step = 'shelves';
+          ui.shelfId = null;
+          removed = true;
         }
       } else if (type === 'book') {
-        const cabinet = findCabinet();
-        if (cabinet) {
-          for (const shelf of cabinet.shelves) {
-            const idx = shelf.books.findIndex(b => b.id === entity.id);
-            if (idx !== -1) {
-              shelf.books.splice(idx, 1);
-              removed = true;
-              break;
-            }
+        const found = findBookById(entityId);
+        if (found) {
+          const idx = found.shelf.books.findIndex(book => book.id === entityId);
+          if (idx !== -1) {
+            found.shelf.books.splice(idx, 1);
+            removed = true;
           }
         }
       }
